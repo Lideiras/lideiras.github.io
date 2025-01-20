@@ -1875,7 +1875,7 @@ body {
 #my-cv {
     height: 100%;
     width: 100%;
-    margin-top: 50px;
+    padding: 50px;
 }
 
 .pdfobject-container { 
