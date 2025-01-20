@@ -1872,8 +1872,13 @@ body {
 	transition-delay: .16s
 }
 
+#my-cv {
+    height: 100%;
+    width: 100%;
+}
+
 .pdfobject-container { 
-    height: 1000px; 
-    border: 1px 
-    solid #ccc; 
+    height: 80vh; /* Cambia a 80% de la altura de la ventana gráfica */
+    width: 80%;  /* Asegura que ocupe el ancho completo */
+    border: 1px solid #ccc; 
 }
