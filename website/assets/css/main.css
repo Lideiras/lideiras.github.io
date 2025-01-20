@@ -1458,10 +1458,10 @@ body {
 }
 
 .hire {
-	width: 820px;
+	width: 500px;
     margin-left: auto;
     margin-right: auto;
-    margin-top: 20%;
+    margin-top: 50px;
     align-items: center;
 }
 
@@ -1474,7 +1474,6 @@ body {
 .hire h2 {
 	margin: 0 0 20px 0;
 	font-size: 30px;
-	text-align: center;
 }
 
 .work-request {
