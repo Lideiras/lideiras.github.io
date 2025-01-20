@@ -1458,24 +1458,14 @@ body {
 }
 
 .hire {
-	position: relative;
-	display: -webkit-box;
-	display: -webkit-flex;
-	display: -ms-flexbox;
-	display: flex;
-	width: 700px;
-	max-width: 75%;
-	height: 100%;
-	-webkit-box-orient: vertical;
-	-webkit-box-direction: normal;
-	-webkit-flex-direction: column;
-	-ms-flex-direction: column;
-	flex-direction: column;
-	-webkit-box-pack: center;
-	-webkit-justify-content: center;
-	-ms-flex-pack: center;
-	justify-content: center;
-	margin: 0 auto
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    width: 90%; /* Incrementar ancho del contenedor */
+    max-width: 90%; /* Incrementar límite máximo de ancho */
+    height: auto; /* Permitir que la altura se ajuste al contenido */
+    margin: 0 auto;
 }
 
 @media (max-width: 1180px) {
@@ -1875,7 +1865,6 @@ body {
 #my-cv {
     height: 100%;
     width: 100%;
-    padding: 50px;
 }
 
 .pdfobject-container { 
