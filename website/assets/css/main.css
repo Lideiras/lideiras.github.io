@@ -1475,8 +1475,7 @@ body {
 	-webkit-justify-content: center;
 	-ms-flex-pack: center;
 	justify-content: center;
-	margin: 0 auto;
-    margin-top: 50px;
+	margin: 0 auto
 }
 
 @media (max-width: 1180px) {
@@ -1876,6 +1875,7 @@ body {
 #my-cv {
     height: 60%;
     width: 80%;
+    margin-top: 50px;
 }
 
 .pdfobject-container { 
