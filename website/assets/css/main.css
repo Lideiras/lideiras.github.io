@@ -1873,7 +1873,7 @@ body {
 	transition-delay: .16s
 }
 
-#my-cv {
+.hire #my-cv {
     height: 75%;
     width: 100%;
 }
