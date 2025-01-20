@@ -1486,7 +1486,7 @@ body {
 }
 
 .hire h2 {
-	margin: 0 0 20px 0;
+	margin: 100px 0 20px 0;
 	font-size: 30px;
 	text-align: center
 }
@@ -1874,12 +1874,12 @@ body {
 }
 
 .hire #my-cv {
-    height: 75%;
+    height: 90%;
     width: 100%;
 }
 
 .pdfobject-container { 
-    height: 80vh; /* Cambia a 80% de la altura de la ventana gráfica */
+    height: 90vh; /* Cambia a 80% de la altura de la ventana gráfica */
     width: 100%;  /* Asegura que ocupe el ancho completo */
     border: 1px solid #ccc; 
 }
