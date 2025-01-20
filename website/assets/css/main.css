@@ -1458,14 +1458,11 @@ body {
 }
 
 .hire {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    width: 90%; /* Incrementar ancho del contenedor */
-    max-width: 90%; /* Incrementar límite máximo de ancho */
-    height: auto; /* Permitir que la altura se ajuste al contenido */
-    margin: 0 auto;
+	width: 820px;
+    margin-left: auto;
+    margin-right: auto;
+    margin-top: 20%;
+    align-items: center;
 }
 
 @media (max-width: 1180px) {
@@ -1477,7 +1474,7 @@ body {
 .hire h2 {
 	margin: 0 0 20px 0;
 	font-size: 30px;
-	text-align: center
+	text-align: center;
 }
 
 .work-request {
