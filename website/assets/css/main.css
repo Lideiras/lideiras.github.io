@@ -1477,6 +1477,7 @@ body {
 	justify-content: center;
 	margin: 0 auto;
     align-content: center;
+    margin-top: 50px;
 }
 
 @media (max-width: 1180px) {
