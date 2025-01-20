@@ -1873,13 +1873,13 @@ body {
 }
 
 #my-cv {
-    height: 60%;
-    width: 80%;
+    height: 100%;
+    width: 100%;
     margin-top: 50px;
 }
 
 .pdfobject-container { 
     height: 80vh; /* Cambia a 80% de la altura de la ventana gráfica */
-    width: 80%;  /* Asegura que ocupe el ancho completo */
+    width: 100%;  /* Asegura que ocupe el ancho completo */
     border: 1px solid #ccc; 
 }
