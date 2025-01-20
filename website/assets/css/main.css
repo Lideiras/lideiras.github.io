@@ -1878,7 +1878,7 @@ body {
 }
 
 .pdfobject-container { 
-    height: 80vh; /* Cambia a 80% de la altura de la ventana gráfica */
+    height: 35vh; /* Cambia a 80% de la altura de la ventana gráfica */
     width: 80%;  /* Asegura que ocupe el ancho completo */
     border: 1px solid #ccc; 
 }
