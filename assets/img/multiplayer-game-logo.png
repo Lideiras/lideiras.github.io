@@ -1,9 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">
-  <rect width="200" height="200" fill="#8e44ad"/>
-  <text x="100" y="50" font-family="Arial" font-size="18" fill="white" text-anchor="middle">Multiplayer Game</text>
-  <circle cx="70" cy="100" r="20" fill="#3498db"/>
-  <circle cx="130" cy="100" r="20" fill="#e74c3c"/>
-  <path d="M70,130 L70,160 L50,180 M70,160 L90,180" stroke="white" stroke-width="3" fill="none"/>
-  <path d="M130,130 L130,160 L110,180 M130,160 L150,180" stroke="white" stroke-width="3" fill="none"/>
-  <path d="M85,100 L115,100" stroke="white" stroke-width="2" stroke-dasharray="5,3"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <rect width="200" height="200" fill="#673ab7"/>
+  <circle cx="70" cy="100" r="30" fill="#ff5722" stroke="#ffffff" stroke-width="2"/>
+  <circle cx="130" cy="100" r="30" fill="#2196f3" stroke="#ffffff" stroke-width="2"/>
+  <text x="100" y="170" font-family="Arial" font-size="16" fill="#ffffff" text-anchor="middle">Multiplayer Game</text>
 </svg>

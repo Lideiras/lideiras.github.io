@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <link rel="icon" href="../assets/img/logo.png">
+  <title>Contact Daniel Noya</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="description" content="Contact Daniel Noya - Game developer and IT solutions specialist">
+  <meta name="keywords" content="contact, Daniel Noya, message, email, get in touch">
+  <meta name="author" content="Daniel Noya">
+  <link rel="stylesheet" href="../assets/css/main.css">
+  <style>
+    .contact-form {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    .form-group label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+      color: #fff;
+    }
+    .form-group input,
+    .form-group textarea {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #444;
+      background-color: #333;
+      color: #fff;
+      border-radius: 4px;
+    }
+    .form-group textarea {
+      min-height: 150px;
+      resize: vertical;
+    }
+    .submit-btn {
+      background-color: #0f33ff;
+      color: #fff;
+      border: none;
+      padding: 12px 30px;
+      cursor: pointer;
+      font-weight: bold;
+      border-radius: 4px;
+      transition: background-color 0.3s ease;
+    }
+    .submit-btn:hover {
+      background-color: #0024d6;
+    }
+    .contact-info {
+      margin-top: 40px;
+      text-align: center;
+    }
+    .contact-info p {
+      margin: 10px 0;
+    }
+    .social-links {
+      margin-top: 20px;
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+    }
+    .social-links a {
+      color: #fff;
+      font-size: 18px;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+
+<div class="perspective effect-rotate-left">
+  <div class="container"><div class="outer-nav--return"></div>
+    <div id="viewport" class="l-viewport">
+      <div class="l-wrapper">
+        <header class="header">
+          <a class="header--logo" href="../index.html">
+            <p> &larr; Go Back</p>
+          </a>
+          <div class="header--nav-toggle">
+            <span></span>
+          </div>
+        </header>
+        <nav class="l-side-nav">
+            <ul class="side-nav">
+              <li class="is-active"><span>Contact Form</span></li>
+              <li><span>Contact Info</span></li>
+            </ul>
+          </nav>
+        <ul class="l-main-content main-content">
+            <li class="l-section section section--is-active">
+                <div class="about">
+                  <div class="about--banner">
+                    <h2>Get in Touch</h2>
+                    <p>
+                        I'm always open to discussing new projects, creative ideas, or opportunities to be part of your vision.
+                        <br><br>
+                        Fill out the form below, and I'll get back to you as soon as possible.
+                    </p>
+                  </div>
+                  <div class="contact-form">
+                    <!-- Using formspree.io for form handling -->
+                    <form action="https://formspree.io/f/your-formspree-endpoint" method="POST">
+                      <div class="form-group">
+                        <label for="name">Name</label>
+                        <input type="text" id="name" name="name" required>
+                      </div>
+                      <div class="form-group">
+                        <label for="email">Email</label>
+                        <input type="email" id="email" name="email" required>
+                      </div>
+                      <div class="form-group">
+                        <label for="subject">Subject</label>
+                        <input type="text" id="subject" name="subject" required>
+                      </div>
+                      <div class="form-group">
+                        <label for="message">Message</label>
+                        <textarea id="message" name="message" required></textarea>
+                      </div>
+                      <button type="submit" class="submit-btn">Send Message</button>
+                    </form>
+                  </div>
+                </div>
+            </li>
+            <li class="l-section section">
+                <div class="about">
+                  <div class="about--banner">
+                    <h2>Contact Information</h2>
+                    <div class="contact-info">
+                      <p><strong>Location:</strong> Carrer dels Rajolers Girona, Girona 17003</p>
+                      <p><strong>Email:</strong> <a href="mailto:contactdanielnoya@gmail.com">contactdanielnoya@gmail.com</a></p>
+                      <p><strong>Phone:</strong> <a href="tel:+34628154217">+34 628 154 217</a></p>
+                      
+                      <div class="social-links">
+                        <a href="https://www.linkedin.com/in/daniel-noya-catoira/" target="_blank">LinkedIn</a>
+                        <a href="https://github.com/lideiras" target="_blank">GitHub</a>
+                        <a href="https://danoya.itch.io/" target="_blank">Itch.io</a>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+            </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <ul class="outer-nav">
+    <li class="is-active"><span>Contact Form</span></li>
+    <li><span>Contact Info</span></li>
+  </ul>
+</div>
+
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.4/jquery.min.js"></script>
+<script>window.jQuery || document.write('<script src="../assets/js/vendor/jquery-2.2.4.min.js"><\/script>')</script>
+<script src="../assets/js/functions-min.js"></script>
+</body>
+</html>
