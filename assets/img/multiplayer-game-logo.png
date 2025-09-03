@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
-  <rect width="200" height="200" fill="#673ab7"/>
-  <circle cx="70" cy="100" r="30" fill="#ff5722" stroke="#ffffff" stroke-width="2"/>
-  <circle cx="130" cy="100" r="30" fill="#2196f3" stroke="#ffffff" stroke-width="2"/>
-  <text x="100" y="170" font-family="Arial" font-size="16" fill="#ffffff" text-anchor="middle">Multiplayer Game</text>
-</svg>
