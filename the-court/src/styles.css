@@ -1,0 +1,452 @@
+/* ===========================================================================
+ * THE COURT — hoja de estilos
+ * Estética VOXEL / pixel-art (decisión del propietario):
+ *   · border-radius: 0 en todas partes, sin excepciones
+ *   · bordes gruesos y "escalonados" (nunca redondeados)
+ *   · sombras duras desplazadas: el botón se hunde, no se desliza
+ *   · sin degradados suaves: todo es color plano
+ *   · tipografía pixel (Silkscreen) en títulos, menús y etiquetas
+ * =========================================================================== */
+
+:root {
+  --bg: #0b1020;
+  --panel: #111a33;
+  --panel-2: #1b2748;
+  --line: #3c4a6e;
+  --line-hi: #5a6b96;
+  --text: #f1f5f9;
+  --muted: #9aa8c4;
+  --accent: #ff6a1a;
+  --accent-dark: #a8430c;
+  --ok: #22c55e;
+  --warn: #facc15;
+  --shadow: #050810;
+  --font: 'Silkscreen', 'Inter', system-ui, sans-serif;
+  --display: 'Silkscreen', 'Bebas Neue', Impact, sans-serif;
+  --bw: 3px; /* grosor de borde estándar */
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0; height: 100%;
+  background: var(--bg); color: var(--text);
+  font-family: var(--font);
+  /* Sin suavizado: los textos pixel no deben interpolarse. */
+  -webkit-font-smoothing: none; font-smooth: never;
+  overflow: hidden;
+}
+
+#game { position: fixed; inset: 0; width: 100vw; height: 100dvh; display: block; outline: none; touch-action: none; }
+[hidden] { display: none !important; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+a { color: var(--accent); }
+button { font: inherit; cursor: pointer; }
+:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+
+/* Marco de pixel: borde doble con la sombra dura por fuera. */
+.frame {
+  border: var(--bw) solid var(--line-hi);
+  box-shadow:
+    inset 0 0 0 3px var(--bg),
+    6px 6px 0 var(--shadow);
+}
+
+/* Selector de idioma */
+#lang-gate {
+  position: fixed; inset: 0; z-index: 50;
+  display: grid; place-items: center;
+  /* Bandas verticales: degradado " escalonado" hecho con capas, no con blur. */
+  background:
+    repeating-linear-gradient(90deg, #101a38 0 48px, #0b1020 48px 96px);
+}
+.gate-card { text-align: center; padding: 2rem; max-width: 92vw; }
+.gate-card h1 {
+  font-family: var(--display);
+  font-size: clamp(2.6rem, 11vw, 6rem);
+  letter-spacing: 0.1em; margin: 0; line-height: 1.1;
+  color: var(--accent);
+  text-shadow: 5px 5px 0 var(--accent-dark), 10px 10px 0 var(--shadow);
+}
+.gate-card p { color: var(--muted); margin: 1rem 0 1.75rem; font-size: .95rem; }
+.gate-buttons { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+
+.gate-buttons button {
+  background: var(--accent); color: #fff;
+  border: var(--bw) solid #fff;
+  border-radius: 0;
+  box-shadow: 6px 6px 0 var(--shadow);
+  padding: .95rem 2.1rem;
+  font-size: 1.05rem; font-weight: 700; letter-spacing: .04em;
+  min-width: 9.5rem;
+  transition: transform .08s, box-shadow .08s;
+}
+.gate-buttons button:hover { transform: translate(-2px, -2px); box-shadow: 9px 9px 0 var(--shadow); }
+.gate-buttons button:active { transform: translate(4px, 4px); box-shadow: 2px 2px 0 var(--shadow); }
+.gate-buttons button.is-last { background: var(--ok); border-color: #fff; }
+
+.gate-classic { display: inline-block; margin-top: 2rem; color: var(--muted); font-size: .8rem; }
+
+/* Cargando */
+#loader { position: fixed; inset: 0; z-index: 40; display: grid; place-content: center; justify-items: center; gap: 1rem; background: var(--bg); }
+.loader-bar { width: min(320px, 70vw); height: 18px; background: var(--line); border: var(--bw) solid var(--line-hi); overflow: hidden; }
+.loader-bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+#loader-text { font-size: .9rem; color: var(--muted); }
+
+/* HUD */
+.hud {
+  position: fixed; inset: 0; pointer-events: none; z-index: 10;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+.hud > * { pointer-events: auto; }
+.hud__top { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; justify-content: space-between; align-items: center; pointer-events: none; }
+.hud__top > * { pointer-events: auto; }
+.hud__buttons { display: flex; gap: 8px; }
+
+.chip {
+  display: inline-block; background: var(--panel);
+  border: var(--bw) solid var(--line-hi);
+  box-shadow: 4px 4px 0 var(--shadow);
+  padding: .4rem .75rem; font-size: .78rem; text-decoration: none; color: var(--text);
+}
+.chip--link:hover { background: var(--accent); color: #fff; border-color: #fff; }
+
+.icon {
+  min-width: 44px; height: 44px;
+  border: var(--bw) solid var(--line-hi); border-radius: 0;
+  background: var(--panel); color: var(--text);
+  box-shadow: 4px 4px 0 var(--shadow);
+  font-weight: 700; letter-spacing: .04em;
+  transition: transform .08s, box-shadow .08s;
+}
+.icon:hover { background: var(--panel-2); transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--shadow); }
+.icon:active { transform: translate(3px, 3px); box-shadow: 1px 1px 0 var(--shadow); }
+
+.menu {
+  position: absolute; top: 64px; right: 12px;
+  background: var(--panel);
+  border: var(--bw) solid var(--line-hi);
+  box-shadow: 6px 6px 0 var(--shadow);
+  padding: .5rem; display: grid; gap: 4px; min-width: 230px;
+}
+.menu__title { margin: .3rem .6rem; color: var(--muted); font-size: .72rem; }
+.menu button, .menu a {
+  text-align: left; background: transparent; color: var(--text);
+  border: 0; border-radius: 0;
+  padding: .7rem .8rem; text-decoration: none; font-size: .85rem;
+}
+.menu button:hover, .menu a:hover { background: var(--accent); color: #fff; }
+
+.hud__labels { position: absolute; inset: 0; pointer-events: none; }
+.label {
+  position: absolute; left: 0; top: 0;
+  font-family: var(--display);
+  font-size: .82rem; letter-spacing: .06em;
+  background: var(--accent); color: #fff;
+  border: 3px solid #fff; border-bottom-width: 6px;
+  box-shadow: 5px 5px 0 var(--shadow);
+  padding: .2rem .5rem; white-space: nowrap;
+  transform: translate(-50%, -100%);
+}
+/* Flecha triangular de CSS (no un glifo): así el borde del triángulo queda
+   nítido a cualquier tamaño y hereda el color del rótulo sin más CSS. */
+/* La flecha va DEBAJO del rótulo, no encima.
+ *
+ * Estaba en `left:50%; top:50%`, o sea clavada en el centro de la etiqueta, y
+ * como es un elemento absoluto se pintaba encima del texto: se leía como un
+ * mancha negra en medio del nombre. Abajo queda limpia y, además, el triángulo
+ * se separa del rótulo en vez de tocarlo.
+ *
+ * `transform-origin: 50% 100%` es la clave de que al girar siga unida a la
+ * etiqueta. Un triángulo con `border-bottom` apoya la BASE en su arista
+ * inferior y levanta la PUNTA hacia arriba, así que el origen va en el 100%
+ * vertical: el triángulo gira sobre su base y la punta barre el arco. Con el
+ * origen en la punta (0%) el cuerpo se le daba la vuelta y se metía debajo
+ * del rótulo, que es justo el fallo que había.
+ */
+.label__arrow {
+  display: none;
+  position: absolute;
+  left: 50%;
+  /* 100% es la altura de la CAJA DE CONTENIDO, y el rótulo tiene 6 px de borde
+     inferior: por eso el desfase son 9 px y no 5. Con 5 quedaba pegado. */
+  top: calc(100% + 9px);
+  width: 0; height: 0;
+  margin-left: -.32rem;
+  border-left: .32rem solid transparent;
+  border-right: .32rem solid transparent;
+  border-bottom: .56rem solid #fff;
+  filter: drop-shadow(2px 2px 0 var(--shadow));
+  transform-origin: 50% 100%;
+}
+.label__dist {
+  margin-left: .35rem;
+  padding: 0 .28rem;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, .3);
+  font-size: .72rem;
+  letter-spacing: .04em;
+  opacity: .9;
+}
+/* Fuera de pantalla: se separa del borde para que la flecha no se recorte y
+   se atenúa un poco, porque manda sobre el cartel que sí está a la vista. */
+.label--edge {
+  transform-origin: 50% 50%;
+  opacity: .96;
+  box-shadow: 4px 4px 0 var(--shadow);
+}
+.label--edge .label__arrow { display: block; }
+.label--edge .label__text { opacity: .72; }
+.label--locked { background: var(--ink, #6b7280); }
+.label--locked .label__text::after { content: ' \1F512'; }
+/* Los rótulos anclados al borde quedan más altos: texto + flecha debajo. */
+
+.prompt {
+  position: absolute; left: 50%; bottom: 26%; transform: translateX(-50%);
+  background: var(--panel);
+  border: var(--bw) solid var(--accent);
+  box-shadow: 5px 5px 0 var(--shadow);
+  padding: .6rem 1.2rem; font-weight: 700; font-size: .82rem;
+  pointer-events: none; text-align: center; max-width: 92vw;
+}
+
+/* Medidor de tiro: barra con muescas de píxel, nada de border-radius */
+.meter {
+  position: absolute; left: 50%; bottom: 14%; transform: translateX(-50%);
+  width: min(320px, 70vw); height: 22px;
+  background: #16203c;
+  border: var(--bw) solid #fff;
+  box-shadow: 5px 5px 0 var(--shadow);
+  pointer-events: none;
+}
+/* Relleno de calentamiento: la franja crece por debajo del medidor mientras se
+ * mantiene pulsado el disparo. Va dentro de la barra y no la sustituye, para
+ * que no se confunda con la zona verde (que es el margen de acierto, otra cosa). */
+.meter .charge {
+  position: absolute; left: 0; bottom: 0;
+  width: 0; height: 9px;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .35);
+  transition: width .04s linear;
+}
+/* Cargada del todo: parpadea para decir «suelta ya». Es una señal de tiempo,
+ * no un adorno: sin ella no hay forma de saber cuándo termina la carga. */
+.meter--full { box-shadow: 5px 5px 0 var(--shadow), 0 0 0 3px var(--accent); }
+.meter--full .charge { animation: charge-full .22s steps(2, end) infinite; }
+@keyframes charge-full { 50% { background: #fff; } }
+
+/* Muescas: repeating-linear-gradient hace los dientitos del medidor. */
+.meter .ticks {
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(90deg, rgba(255,255,255,.22) 0 2px, transparent 2px 16px);
+}
+.meter .sweet {
+  position: absolute; top: 0; bottom: 0; background: var(--ok);
+  /* left/width los fija hud.ts desde SWEET_SPOT */
+  box-shadow: inset 0 0 0 2px #0d3a1c;
+}
+.meter .needle {
+  position: absolute; top: -7px; width: 6px; height: 32px; margin-left: -3px;
+  background: #fff; box-shadow: 2px 0 0 var(--shadow);
+}
+
+.toast {
+  position: absolute; left: 50%; top: 14%; transform: translateX(-50%);
+  background: var(--panel);
+  border: var(--bw) solid var(--line-hi);
+  border-left: 8px solid var(--accent);
+  box-shadow: 6px 6px 0 var(--shadow);
+  padding: .8rem 1.2rem; font-size: .85rem;
+  text-align: center; max-width: min(92vw, 640px); pointer-events: none;
+}
+
+/* Táctil */
+.touch { position: absolute; left: 0; right: 0; bottom: 0; height: 190px; pointer-events: none; }
+.touch > * { pointer-events: auto; }
+
+.joy {
+  position: absolute; left: 24px; bottom: 24px; width: 120px; height: 120px;
+  border: 4px solid var(--line-hi);
+  background: rgba(255,255,255,.08);
+  box-shadow: 5px 5px 0 var(--shadow);
+  touch-action: none;
+}
+/* Cruceta del joystick, en bloques. */
+.joy::before, .joy::after {
+  content: ''; position: absolute; background: rgba(255,255,255,.3);
+}
+.joy::before { left: 50%; top: 12%; bottom: 12%; width: 4px; margin-left: -2px; }
+.joy::after { top: 50%; left: 12%; right: 12%; height: 4px; margin-top: -2px; }
+.stick {
+  position: absolute; left: 36px; top: 36px; width: 48px; height: 48px;
+  background: rgba(255,255,255,.55);
+  border: 3px solid #fff; box-shadow: 3px 3px 0 var(--shadow);
+}
+
+.touch__btns { position: absolute; right: 20px; bottom: 28px; display: flex; gap: 14px; align-items: flex-end; }
+.btn-round {
+  width: 64px; height: 64px;
+  border: 4px solid #fff;
+  background: var(--accent); color: #fff;
+  box-shadow: 5px 5px 0 var(--shadow);
+  font-size: 1.2rem; font-weight: 700;
+  touch-action: none; user-select: none;
+}
+.btn-round--big { width: 88px; height: 88px; font-size: 1.8rem; }
+.btn-round:active { transform: translate(3px, 3px); box-shadow: 2px 2px 0 var(--shadow); }
+
+/* Paneles */
+.panel { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: rgba(5, 8, 18, .72); padding: 12px; }
+.panel__card {
+  width: min(920px, 100%); max-height: 88dvh;
+  display: flex; flex-direction: column;
+  background: var(--panel);
+  border: 4px solid var(--line-hi);
+  box-shadow: 10px 10px 0 var(--shadow);
+  overflow: hidden;
+}
+.panel__head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 1rem 1.25rem;
+  border-bottom: 4px solid var(--line-hi);
+  background: var(--panel-2);
+}
+.panel__head h2 { margin: 0; font-family: var(--display); font-size: 1.15rem; letter-spacing: .08em; color: var(--accent); }
+.panel__close {
+  width: 44px; height: 44px;
+  border: var(--bw) solid var(--line-hi); border-radius: 0;
+  background: var(--panel); color: var(--text);
+  box-shadow: 4px 4px 0 var(--shadow); font-size: 1rem;
+}
+.panel__body { padding: 1.25rem; overflow: auto; }
+.panel__body h3 { margin: 0 0 .4rem; font-family: var(--display); letter-spacing: .04em; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; }
+.card {
+  border: var(--bw) solid var(--line);
+  box-shadow: 5px 5px 0 var(--shadow);
+  padding: 1rem; background: var(--panel-2);
+}
+.card header { display: flex; justify-content: space-between; gap: .5rem; align-items: baseline; }
+.chips { display: flex; flex-wrap: wrap; gap: .4rem; margin: .5rem 0 0; }
+.muted { color: var(--muted); }
+.lead { font-size: 1rem; }
+
+.stat { display: grid; grid-template-columns: 9rem 1fr; gap: .8rem; align-items: center; margin: .5rem 0; }
+
+/* Barra de nivel 1–10 con 10 muescas de píxel */
+.bar {
+  height: 20px; background: #16203c;
+  border: var(--bw) solid var(--line-hi);
+  position: relative; overflow: hidden;
+}
+.bar::after {
+  content: ''; position: absolute; inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 9px, var(--line) 9px 11px);
+}
+.bar i {
+  display: block; height: 100%;
+  background: var(--accent);
+  box-shadow: inset 0 -3px 0 var(--accent-dark);
+}
+.skillgroup { margin-bottom: 1.6rem; }
+
+.playercard { display: flex; gap: 1rem; align-items: center; margin-bottom: 1rem; }
+.jersey {
+  font-family: var(--display); font-size: 1.6rem;
+  width: 5rem; height: 5rem; display: grid; place-items: center;
+  background: var(--accent); color: #fff;
+  border: 4px solid #fff; box-shadow: 5px 5px 0 var(--shadow);
+}
+.highlights { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .8rem; margin: 1rem 0 0; }
+.highlights > div { border: var(--bw) solid var(--line); box-shadow: 4px 4px 0 var(--shadow); padding: .6rem .7rem; background: var(--panel-2); }
+.highlights dt { color: var(--muted); font-size: .72rem; }
+.highlights dd { margin: 0; font-weight: 700; color: var(--accent); }
+
+.timeline { list-style: none; margin: 0; padding: 0 0 0 1rem; border-left: 4px solid var(--accent); display: grid; gap: 1.2rem; }
+.badge {
+  display: inline-block; font-size: .65rem; letter-spacing: .06em;
+  padding: .15rem .5rem; background: var(--line); color: #fff;
+  border: 2px solid var(--line-hi);
+}
+.badge--work { background: #1d4ed8; } .badge--education { background: #7e22ce; } .badge--sport { background: var(--accent-dark); }
+
+form[data-contact] { display: grid; gap: .8rem; margin-bottom: 1.2rem; }
+form[data-contact] label { display: grid; gap: .3rem; font-size: .8rem; color: var(--muted); }
+input, textarea {
+  font: inherit; color: var(--text);
+  background: #0d1428;
+  border: var(--bw) solid var(--line-hi);
+  border-radius: 0;
+  padding: .75rem .8rem;
+}
+input:focus, textarea:focus { border-color: var(--accent); outline: none; }
+.hp { position: absolute; left: -9999px; }
+.btn {
+  background: var(--accent); color: #fff;
+  border: var(--bw) solid #fff; border-radius: 0;
+  box-shadow: 5px 5px 0 var(--shadow);
+  padding: .85rem 1.3rem; font-weight: 700;
+  transition: transform .08s, box-shadow .08s;
+}
+.btn:hover { transform: translate(-2px, -2px); box-shadow: 7px 7px 0 var(--shadow); }
+.btn:active { transform: translate(3px, 3px); box-shadow: 2px 2px 0 var(--shadow); }
+.btn:disabled { opacity: .55; }
+
+/* Modo entrevista: la tarjeta pasa a "tercio inferior" de TV y deja ver la escena */
+body[data-mode='interview'] .panel { background: transparent; place-items: end start; pointer-events: none; }
+body[data-mode='interview'] .panel__card { pointer-events: auto; width: min(460px, 100%); max-height: 70dvh; }
+
+@media (max-width: 700px) {
+  body[data-mode='interview'] .panel { place-items: end center; }
+  .stat { grid-template-columns: 6.5rem 1fr; }
+  .label { font-size: .7rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+/* ── Descarga del CV ──────────────────────────────────────────────────────
+ * Va el primero en la sección de contacto, con su propia línea: es la acción
+ * más útil de todo el panel y no debe competir con el formulario.
+ */
+.cv-download {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin: 0.9rem 0 1.4rem;
+  padding: 0.7rem 0.9rem;
+  border: 2px solid var(--line, #2b3550);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.cv-download__note {
+  font-size: 0.78em;
+  opacity: 0.72;
+}
+
+/* ── Récord permanente, abajo a la derecha ─────────────────────────────────
+ * No compite con el medidor (que está abajo al centro) ni con las etiquetas de
+ * rumbo (que se anclan a los bordes): se queda en su esquina y sólo cambia el
+ * número, de modo que no distrae mientras se juega. */
+.hud__record {
+  position: absolute;
+  right: 14px; bottom: 14px;
+  display: flex; align-items: baseline; gap: .5rem;
+  padding: .35rem .6rem;
+  background: var(--panel);
+  border: var(--bw) solid var(--line-hi);
+  border-left: 8px solid var(--accent);
+  box-shadow: 5px 5px 0 var(--shadow);
+  font-family: var(--display);
+  font-size: .8rem; letter-spacing: .06em;
+  pointer-events: none;
+}
+.hud__record-tag { opacity: .75; }
+.hud__record-num { font-size: 1rem; color: var(--accent); }
+@media (max-width: 520px) {
+  .hud__record { right: 8px; bottom: 8px; font-size: .7rem; padding: .25rem .45rem; }
+}
