@@ -1,5 +1,5 @@
 Agrega animaciones extra para el personaje jugable y los reporteros como movimiento de los brazon al botar, animacion sencilla de caida post salto de tiro, para los reporteros cierto movimiento que otorgue realismo, para el publico movimiento sencillo para dar realismo y mas animaciones sencillas que podamos implementar
-Los cuadros de texto con la informacion los quiero centrados en la pantalla no en un lateral
+Los cuadros de texto con la informacion no los quiero pegados al lateral si no mas flotantes pero sin ocupar de manera excesiva la pantalla pero manteniendo orden, coherencia y legibilidad de los elementos al fin y al cabo es la informacion de mi portfolio asi que deberia ser legible y correcta
 El marcador superior no termina de mostrar correctamente el record del usuario, aparecen los numeros cortados por la mitad
 Mejora la iluminacion, hay focos en la parte superior de la cancha que deberian aportar luz ademas de que debemos modificar la luz para que se asemeje mas a la luz interior de un pabellon estilo nba
 Por alguna razon ocurre una mejora considerable en el rendimiento posterior a abrir alguna de las secciones y luego cerrarla respecto a la primera carga el juego sin abrir ningua seccion
