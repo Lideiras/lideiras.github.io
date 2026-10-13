@@ -1,15 +1,31 @@
-// Silkscreen es la tipografía pixel de la estética voxel (decisión del propietario).
-import '@fontsource/silkscreen';
-import '@fontsource/silkscreen/700.css';
-// Bebas Neue e Inter se quedan como respaldo para textos largos.
-import '@fontsource/bebas-neue';
-import '@fontsource/inter/400.css';
-import '@fontsource/inter/700.css';
+/*
+ * TIPOGRAFÍAS: sólo los subsets que se usan.
+ *
+ *  · Silkscreen es la pixel de la estética voxel (decisión del propietario). Se
+ *    cargan `latin-400` y `latin-700` en vez del `index.css` completo, que
+ *    traía cirílico y griego que nadie pide.
+ *  · Bebas Neue se queda de respaldo para textos largos.
+ *  · INTER SE HA QUITADO. Estaba en la pila de respaldo
+ *    (`--font: Silkscreen, Inter, …`) y no llegaba a aplicarse nunca: medido con
+ *    `document.fonts`, sus caras quedaban en `unloaded` en las dos páginas. Eran
+ *    480 KB (+308 KB de .woff) descargados para nada.
+ */
+import '@fontsource/silkscreen/latin-400.css';
+import '@fontsource/silkscreen/latin-700.css';
+import '@fontsource/bebas-neue/latin.css';
 import './styles.css';
 import { readSavedLang, setLang, t, type Lang } from './i18n';
 
-/** true = preguntar el idioma en CADA visita, antes de cargar el juego. */
-const ASK_EVERY_VISIT = true;
+/**
+ * true = preguntar el idioma en CADA visita, antes de cargar el juego.
+ *
+ * En `false` la puerta sólo aparece la primera vez (cuando no hay idioma
+ * guardado) y las siguientes visitas entran directas con el idioma recordado.
+ * Antes era `true` y obligaba a decidir en cada recarga para acabar en el mismo
+ * sitio, con el botón EN/ES del HUD a un clic de distancia haciendo lo mismo:
+ * una pantalla entera de fricción para una decisión que ya estaba tomada.
+ */
+const ASK_EVERY_VISIT = false;
 
 const gate = document.getElementById('lang-gate') as HTMLElement;
 const loader = document.getElementById('loader') as HTMLElement;

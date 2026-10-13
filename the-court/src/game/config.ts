@@ -43,6 +43,36 @@ export const CAMERA = {
   clampX: 11,
   minZ: -4,
   maxZ: 5,
+
+  /*
+   * ADELANTO (fase C).
+   *
+   * El encuadre se desplaza hacia donde VA el jugador, no hacia donde está. La
+   * cámara de arriba mira al suelo, así que en marcha se ve el hueco por delante
+   * del cuerpo y no el rastro por detrás. 3,2 m es media pantalla larga a esta
+   * altura: más se nota el tirón al cambiar de sentido, menos no se percibe.
+   */
+  advance: 3.2,
+  /*
+   * ACERCAMIENTO AL CARGAR EL TIRO (fase C).
+   *
+   * Mientras se carga, la distancia baja de 16,0 a 14,4 m: el medidor se lee
+   * mejor y el gesto tiene intención (la cámara se arrima al tiro, como en una
+   * retransmisión). Es el mismo factor que el informe pedia para el dolly-in.
+   */
+  chargeZoom: 0.9,
+  /*
+   * CRECIMIENTO DEL ENCUADRE EN VERTICAL.
+   *
+   * `1,5 / aspect` alejaba la cámara para «ver más cancha» en pantallas
+   * verticales, y en un móvil (aspect 0,5) se va al tope de 2,4: el jugador
+   * acaba siendo un muñeco diminuto con el HUD encima. Se conserva el gesto —en
+   * vertical se ve más pista— pero a media fuerza: el crecimiento se interpola a
+   * la mitad, así que en 827 × 979 la distancia pasa de 1,78 a 1,39 (el personaje
+   * un 22 % más grande) y en un móvil de 2,4 a 2,0. En apaisado no cambia nada
+   * (factor 1).
+   */
+  portraitGrow: 0.5,
 } as const;
 
 export type Side = -1 | 1;

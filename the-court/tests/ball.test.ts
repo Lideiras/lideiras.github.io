@@ -38,6 +38,66 @@ function reparto(): { cuero: number; costura: number; total: number } {
   return { cuero, costura, total: cuero + costura };
 }
 
+/**
+ * Reparto y rojo máximo de un balón ya construido.
+ *
+ * Se factoriza porque el caso importante no es el balón sin modelo (el que
+ * había) sino el balón CON modelo: es el camino que se ejecuta en el juego.
+ */
+function medir(g: THREE.Object3D): { cuero: number; costura: number; total: number; maxRojo: number } {
+  let cuero = 0;
+  let costura = 0;
+  let maxRojo = 0;
+  g.traverse((o) => {
+    if (!(o as THREE.Mesh).isMesh) return;
+    const attr = (o as THREE.Mesh).geometry.getAttribute('color');
+    if (!attr) return;
+    for (let i = 0; i < attr.count; i++) {
+      const hex = srgb(attr as THREE.BufferAttribute, i);
+      const r = (hex >> 16) & 255;
+      if (r > maxRojo) maxRojo = r;
+      if (r > 150) cuero++;
+      else costura++;
+    }
+  });
+  return { cuero, costura, total: cuero + costura, maxRojo };
+}
+
+/**
+ * Sustituto del `ball.glb` real, con SU color de material: el modelo trae la
+ * corteza en #864d24 (marrón).
+ *
+ * Ese marrón es un color válido de glTF, así que entraba por la puerta de
+ * `materialColor` y tapaba el naranja de la paleta: el balón salía marrón oscuro
+ * en el juego mientras este test —que construía el balón SIN modelo— pasaba en
+ * verde. Aquí se reproduce ese camino sin depender del archivo.
+ */
+function stubGLB(): THREE.Group {
+  const g = new THREE.Group();
+  g.add(
+    new THREE.Mesh(
+      new THREE.SphereGeometry(0.12, 24, 16),
+      new THREE.MeshStandardMaterial({ color: 0x864d24 }),
+    ),
+  );
+  return g;
+}
+
+describe('balon: color con el modelo cargado (regresion del balon marron)', () => {
+  const m = medir(createBallMesh(stubGLB()));
+
+  it('la corteza es naranja de paleta aunque el modelo la traiga marron', () => {
+    // El naranja de PALETTE.ball (#ff7a1a) tiene el rojo a 255. Si `colorOf`
+    // devolviera el color del material del glTF, el máximo sería 134 (#864d24).
+    expect(m.maxRojo, `maxRojo ${m.maxRojo}`).toBeGreaterThan(230);
+  });
+
+  it('con el modelo, el cuero sigue siendo la mayor parte de la corteza', () => {
+    const ratio = m.cuero / m.total;
+    expect(ratio, `cuero ${(ratio * 100).toFixed(0)} %`).toBeGreaterThan(0.7);
+  });
+});
+
 describe('balon: reparto de la corteza', () => {
   const r = reparto();
 
@@ -54,19 +114,8 @@ describe('balon: reparto de la corteza', () => {
   });
 
   it('el cuir es naranja saturado, no marrón', () => {
-    const g = createBallMesh();
-    let maxRojo = 0;
-    g.traverse((o) => {
-      if (!(o as THREE.Mesh).isMesh) return;
-      const attr = (o as THREE.Mesh).geometry.getAttribute('color');
-      if (!attr) return;
-      for (let i = 0; i < attr.count; i++) {
-        const r = (srgb(attr as THREE.BufferAttribute, i) >> 16) & 255;
-        if (r > maxRojo) maxRojo = r;
-      }
-    });
     // Sin AO, el naranja #ff7a1a tiene el canal rojo a 255. Si el máximo sale
     // muy por debajo, el naranja no llega a la malla.
-    expect(maxRojo).toBeGreaterThan(230);
+    expect(medir(createBallMesh()).maxRojo).toBeGreaterThan(230);
   });
 });

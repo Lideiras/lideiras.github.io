@@ -3,6 +3,17 @@ import { BALL, COURT, RIM, SCORER_TABLE, boardX, rimX, type Side } from '../conf
 import { PALETTE, VOXEL, VoxelWorld, voxelGroup } from './util';
 import { voxelizeObject } from './voxelize';
 
+/** Costura del balón: marrón cálido. Negro la convertía en un agujero. */
+const SEAM = 0x9c4f18;
+
+/** Luminancia relativa (0..1) de un color empaquetado, para separar corteza de costura. */
+function luminance(hex: number): number {
+  const r = ((hex >> 16) & 0xff) / 255;
+  const g = ((hex >> 8) & 0xff) / 255;
+  const b = (hex & 0xff) / 255;
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
 /**
  * Anillo de voxels por BARRIDO: recorre la circunferencia y rellena un disco de
  * radio `thickness/2` en cada paso. La versión anterior decidía celda a celda si
@@ -52,7 +63,20 @@ export function buildHoop(side: Side): THREE.Group {
     voxelGroup(
       `hoopStruct${tag}`,
       (v) => {
-        const [lo, hi] = poleX < bx ? [poleX, bx] : [bx, poleX];
+        /*
+         * EL BRAZO NO ENTRA EN EL TABLERO.
+         *
+         * `hoopStruct` y `hoopFine` son dos `VoxelWorld` distintos y cada uno
+         * emite sus propias caras exteriores, así que donde sus volúmenes se
+         * solapan las dos caras quedan COPLANARES y parpadean. Medido con el
+         * raycast de la sonda: el brazo terminaba su última celda en
+         * x = -12,75, que es justo la frontera entre las dos celdas del tablero,
+         * y devolvía dos impactos a la misma distancia. Dejando una celda
+         * gruesa (6,25 cm) de aire antes de la cara trasera del tablero no hay
+         * solape, y el hueco queda detrás del tablero, que lo tapa.
+         */
+        const armEnd = bx + side * s * 4;
+        const [lo, hi] = poleX < armEnd ? [poleX, armEnd] : [armEnd, poleX];
         // Base: placa ancha con refuerzos en las esquinas y pernos.
         v.span(poleX - 0.55, 0, -0.55, poleX + 0.55, 0.12, 0.55, 0x6b7686);
         v.span(poleX - 0.42, 0.12, -0.42, poleX + 0.42, 0.3, 0.42, PALETTE.metal);
@@ -96,12 +120,29 @@ export function buildHoop(side: Side): THREE.Group {
       // Protector inferior: la banda acolchada que llevan todos los tableros.
       v.span(bx - t * 1.4, y0 - 0.06, -0.9, bx + t * 1.4, y0, 0.9, 0x2b3550);
 
-      // Cuadro de tiro: contorno naranja sobre el tablero.
-      const f = side * (t + s * 0.6);
+      // Cuadro de tiro: contorno naranja sobre la cara del tablero que MIRA A LA
+      // PISTA. Estaba con `side` en vez de `-side`, así que se pintaba en la
+      // cara de atrás: desde la pista el tablero salía liso y por detrás
+      // aparecía un cuadro flotante.
+      const f = -side * (t + s * 0.6);
       v.span(bx + f - 0.03, 3.05, -0.3, bx + f + 0.03, 3.5, -0.2, PALETTE.rim);
       v.span(bx + f - 0.03, 3.05, 0.2, bx + f + 0.03, 3.5, 0.3, PALETTE.rim);
       v.span(bx + f - 0.03, 3.05, -0.3, bx + f + 0.03, 3.15, 0.3, PALETTE.rim);
       v.span(bx + f - 0.03, 3.4, -0.3, bx + f + 0.03, 3.5, 0.3, PALETTE.rim);
+
+      /*
+       * RELOJ DE POSESIÓN Y CRONÓMETRO sobre el tablero (fase A).
+       *
+       * Caja oscura colgada del canto superior del tablero, con la pantalla
+       * mirando a la pista: dos bloques naranjas separados por una franja negra,
+       * que es exactamente como se lee un 24" a 15 m. Sin texto y sin llamada de
+       * dibujo nueva (va dentro del mismo grupo que el tablero).
+       */
+      const scFace = bx + f - 0.05;
+      v.span(scFace - 0.26, y1 + 0.02, -0.3, scFace + 0.26, y1 + 0.52, 0.3, 0x1f2937);
+      v.span(scFace - 0.22, y1 + 0.08, -0.24, scFace + 0.22, y1 + 0.46, 0.24, 0x0b1220);
+      v.span(scFace - side * 0.06, y1 + 0.14, -0.18, scFace - side * 0.02, y1 + 0.4, -0.02, PALETTE.rim);
+      v.span(scFace - side * 0.06, y1 + 0.14, 0.02, scFace - side * 0.02, y1 + 0.4, 0.18, PALETTE.rim);
 
       // Soporte del aro: escuadra que une tablero y aro.
       const rimCx = rimX(side);
@@ -113,30 +154,123 @@ export function buildHoop(side: Side): THREE.Group {
       // Aro: anillo sólido a la altura reglamentaria (3,05 m).
       ringVoxels(v, rimCx, RIM.y, 0, RIM.radius, s * 1.8, PALETTE.rim);
 
-      // Red: DOCE hilos (antes 8) que se cierran hacia abajo, con dos aros
-      // intermedios. Más hilos es lo que hace que la red se lea como red y no
-      // como cuatro palos.
-      const HILOS = 12;
-      const niveles = 8;
-      for (let n = 0; n < HILOS; n++) {
-        const a = (n / HILOS) * Math.PI * 2;
-        for (let l = 0; l < niveles; l++) {
-          const tt = l / (niveles - 1);
-          const rr = RIM.radius * (1 - tt * 0.42);
-          const y = RIM.y - 0.04 - tt * 0.44;
-          const j0 = Math.round((y - s / 2) / s);
-          const cx = Math.round((rimCx + Math.cos(a) * rr) / s);
-          const cz = Math.round((Math.sin(a) * rr) / s);
-          v.fillCells(cx, j0, cz, cx, j0 + 1, cz, PALETTE.net);
-        }
-      }
-      // Aros de la red: dos anillos intermedios que la mantienen abierta.
-      ringVoxels(v, rimCx, RIM.y - 0.2, 0, RIM.radius * 0.88, s * 1.2, PALETTE.net);
-      ringVoxels(v, rimCx, RIM.y - 0.48, 0, RIM.radius * 0.58, s * 1.2, PALETTE.net);
     }),
   );
 
+  /*
+   * PROTECCIÓN DE ESPUMA DEL POSTE.
+   *
+   * Las canastas de un pabellón llevan el primer tramo del poste forrado: es lo
+   * que se lleva por delante cualquiera que entre a canasta, y es el detalle que
+   * dice «este sitio se usa» sin añadir ni una llamada de dibujo (va en el mismo
+   * grupo que entra en el fundido del arranque).
+   */
+  group.add(
+    voxelGroup(`hoopPad${tag}`, (v) => {
+      v.span(poleX - 0.3, 0.9, -0.3, poleX + 0.3, 2.15, 0.3, 0x27314c);
+      // Cintas de acento cada 40 cm: sin ellas el forro es un tubo negro.
+      for (const y of [1.1, 1.5, 1.9]) {
+        v.span(poleX - 0.34, y, -0.34, poleX + 0.34, y + 0.09, 0.34, PALETTE.shirt);
+      }
+    }, VOXEL * 2),
+  );
+
+  // La red va aparte: es lo único de la canasta que se mueve (ver `buildNet`).
+  group.add(buildNet(side));
+
   return group;
+}
+
+/* ===========================================================================
+ * RED DEL ARO, CON ONDULACIÓN POR SHADER
+ * ---------------------------------------------------------------------------
+ * La red es la pieza que MÁS mira el jugador —todo el juego consiste en meter el
+ * balón por ahí— y también la única de la canasta que tiene movimiento propio:
+ * cuando entra el balón, la red se sacude.
+ *
+ * No se anima desde JavaScript (mover los vértices en CPU sería reescribir los
+ * buffers de las dos redes en cada fotograma) ni con un `AnimationMixer`. El
+ * desplazamiento va en el VÉRTICE: cuanto más abajo está un vértice, más se
+ * mueve, con una onda que sube por la malla. El coste en CPU es un uniforme
+ * compartido por las dos redes, y en el bucle sólo se avanza cuando hay algo que
+ * contar (la amplitud decae a cero en medio segundo).
+ *
+ * La red sale del fundido del arranque A PROPÓSITO (`batch.ts` la deja fuera):
+ * una malla fundida no puede animarse. Cuesta 2 llamadas de dibujo en la vista de
+ * juego y 0 en las seis secciones, donde queda fuera de cuadro.
+ * ========================================================================= */
+
+/** Tiempo y amplitud de la sacudida de las redes. Los avanza `main.ts`. */
+export const NET = { time: { value: 0 }, amp: { value: 0 } };
+
+let netMaterial: THREE.MeshStandardMaterial | null = null;
+
+/** Material de la red: el voxel de siempre MÁS el desplazamiento de la malla. */
+function netMat(): THREE.MeshStandardMaterial {
+  if (netMaterial) return netMaterial;
+  const m = new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    roughness: 0.92,
+    metalness: 0,
+    side: THREE.FrontSide,
+  });
+  m.onBeforeCompile = (shader) => {
+    shader.uniforms.uNetTime = NET.time;
+    shader.uniforms.uNetAmp = NET.amp;
+    shader.vertexShader = `uniform float uNetTime;\nuniform float uNetAmp;\n${shader.vertexShader}`.replace(
+      '#include <begin_vertex>',
+      `#include <begin_vertex>
+      {
+        // 0 en el aro, 1 en el fondo de la red: abajo se mueve todo, arriba nada.
+        float k = clamp((3.02 - position.y) / 0.45, 0.0, 1.0);
+        k *= k;
+        float f = uNetAmp * 0.075 * k;
+        transformed.x += sin(uNetTime * 26.0 + position.y * 12.0 + position.x) * f;
+        transformed.z += cos(uNetTime * 23.0 + position.y * 10.0 + position.z) * f;
+        transformed.y -= abs(sin(uNetTime * 21.0 + position.y * 8.0)) * f * 0.4;
+      }`,
+    );
+  };
+  netMaterial = m;
+  return m;
+}
+
+/**
+ * Red del aro: DOCE hilos (antes 8) que se cierran hacia abajo, con dos aros
+ * intermedios. Más hilos es lo que hace que la red se lea como red y no como
+ * cuatro palos.
+ *
+ * Se construye en su propio `VoxelWorld` y con los colores fundidos en una sola
+ * malla: es una pieza animada, así que tiene que ser UNA llamada de dibujo.
+ */
+export function buildNet(side: Side): THREE.Mesh {
+  const s = VOXEL;
+  const rimCx = rimX(side);
+  const v = new VoxelWorld(s);
+  const HILOS = 12;
+  const niveles = 8;
+  for (let n = 0; n < HILOS; n++) {
+    const a = (n / HILOS) * Math.PI * 2;
+    for (let l = 0; l < niveles; l++) {
+      const tt = l / (niveles - 1);
+      const rr = RIM.radius * (1 - tt * 0.42);
+      const y = RIM.y - 0.04 - tt * 0.44;
+      const j0 = Math.round((y - s / 2) / s);
+      const cx = Math.round((rimCx + Math.cos(a) * rr) / s);
+      const cz = Math.round((Math.sin(a) * rr) / s);
+      v.fillCells(cx, j0, cz, cx, j0 + 1, cz, PALETTE.net);
+    }
+  }
+  // Aros de la red: dos anillos intermedios que la mantienen abierta.
+  ringVoxels(v, rimCx, RIM.y - 0.2, 0, RIM.radius * 0.88, s * 1.2, PALETTE.net);
+  ringVoxels(v, rimCx, RIM.y - 0.48, 0, RIM.radius * 0.58, s * 1.2, PALETTE.net);
+
+  const group = v.build({ name: `net${side > 0 ? 'R' : 'L'}`, mergeColors: true });
+  const mesh = group.children[0] as THREE.Mesh;
+  mesh.material = netMat();
+  mesh.castShadow = false; // la red se mueve: su sombra no puede quedar horneada
+  mesh.receiveShadow = false;
+  return mesh;
 }
 
 /**
@@ -162,17 +296,31 @@ export function buildScorerTable(): THREE.Group {
     }
     v.span(x0 + 0.1, 0.45, z - 0.05, x1 - 0.1, 0.53, z + 0.05, PALETTE.metal);
 
-    // ── Equipo sobre la mesa: monitor, teclado, papeles y dos vasos.
-    // Monitor con peana y pantalla encendida (azul), mirando a la pista.
+    // ── Equipo sobre la mesa: DOS monitores, teclado, reloj de posesión,
+    // papeles, dos vasos y un termo. Es una de las seis zonas y se mira de
+    // cerca: con un solo monitor se leía como una mesa cualquiera.
+    // Monitor 1, con peana y pantalla encendida (azul), mirando a la pista.
     v.span(-0.42, 1.0, z - 0.16, -0.05, 1.06, z + 0.02, 0x1f2937);
     v.span(-0.4, 1.06, z - 0.12, -0.07, 1.46, z - 0.04, 0x0b1220);
     v.span(-0.37, 1.11, z - 0.05, -0.1, 1.41, z - 0.03, 0x3f8ae0);
+    // Monitor 2, más bajo y girado hacia la mesa: el de la repetición.
+    v.span(-0.9, 1.0, z - 0.14, -0.62, 1.05, z + 0.04, 0x1f2937);
+    v.span(-0.88, 1.05, z - 0.11, -0.64, 1.34, z - 0.05, 0x0b1220);
+    v.span(-0.85, 1.09, z - 0.05, -0.67, 1.3, z - 0.04, 0x7ee08a);
     // Teclado.
     v.span(0.05, 1.0, z - 0.2, 0.55, 1.05, z + 0.02, 0x2b3a52);
-    // Papeles y dos vasos.
+    // RELOJ DE POSESIÓN sobre la mesa: caja oscura con la cuenta en naranja,
+    // mirando a la pista. Es el aparato que más dice «aquí hay partido».
+    v.span(0.72, 1.0, z - 0.16, 0.92, 1.05, z + 0.04, 0x1f2937);
+    v.span(0.7, 1.05, z - 0.12, 0.94, 1.5, z - 0.02, 0x0b1220);
+    v.span(0.73, 1.14, z - 0.03, 0.91, 1.42, z - 0.01, 0xff3b30);
+    v.span(0.78, 1.2, z - 0.03, 0.8, 1.36, z - 0.01, 0x1f2937); // separación de los dos dígitos
+    // Papeles, vasos y termo.
     v.span(0.65, 1.0, z - 0.12, 0.95, 1.06, z + 0.14, 0xe8e2d0);
     v.span(-1.0, 1.0, z - 0.1, -0.84, 1.16, z + 0.06, 0xe8e2d0);
     v.span(-0.74, 1.0, z - 0.08, -0.6, 1.14, z + 0.08, 0xe8e2d0);
+    v.span(0.3, 1.0, z + 0.18, 0.42, 1.24, z + 0.3, 0x4fa8f0); // termo
+    v.span(0.3, 1.24, z + 0.2, 0.42, 1.28, z + 0.28, 0x1f2937);
 
     // ── Dos sillas de anotador, giradas hacia la mesa.
     for (const dx of [-0.75, 0.75]) {
@@ -182,9 +330,15 @@ export function buildScorerTable(): THREE.Group {
     }
 
     // ── Placa con el rótulo, sobre un poste, mirando a la pista.
+    //
+    // La pintura va en la cara de MÁS z (la que da a la cancha) y UNA CELDA por
+    // fuera de la placa. Antes estaba en z+0,34..z+0,38, es decir en la cara de
+    // atrás, y desde la pista se veía el canto oscuro de la placa: el cartel
+    // salía negro. Al estar en el mismo `VoxelWorld`, la cara interior entre
+    // placa y pintura no se emite, así que tampoco hay parpadeo.
     v.span(-0.05, 1.06, z + 0.4, 0.05, 2.1, z + 0.46, PALETTE.metal);
     v.span(-0.9, 1.6, z + 0.36, 0.9, 2.14, z + 0.44, 0x1f2937);
-    v.span(-0.82, 1.67, z + 0.34, 0.82, 2.07, z + 0.38, PALETTE.shirt);
+    v.span(-0.82, 1.67, z + 0.44, 0.82, 2.07, z + 0.48, PALETTE.shirt);
 
     // ── Cables: dos tiros sueltos que caen de la mesa al suelo. Detalle
     // pequeño, pero es lo que separa una mesa de un mueble de bloque.
@@ -225,6 +379,44 @@ export function buildBench(): THREE.Group {
     // Botellas en el suelo, junto a la pata central.
     v.span(-0.3, 0, z0 + 0.62, -0.16, 0.24, z0 + 0.76, 0x4fa8f0);
     v.span(0.2, 0, z0 + 0.6, 0.34, 0.24, z0 + 0.74, 0x7ee08a);
+
+    /*
+     * CESTA DE BALONES (fase A del informe).
+     *
+     * Un banquillo sin balones a mano no es un banquillo: es un mueble. Va a un
+     * lado del banco, con los balones a la vista, y es lo que da la lectura de
+     * «aquí se calienta antes de entrar». Los balones son esferas de voxels del
+     * mismo naranja que el balón de juego, a 0,14 m de radio (el balón real mide
+     * 0,204 de diámetro: a este tamaño se leen a la legua sin costar nada).
+     */
+    const cestaX = 3.4;
+    const cestaZ = z0 + 0.3;
+    v.span(cestaX - 0.5, 0.03, cestaZ - 0.5, cestaX + 0.5, 0.09, cestaZ + 0.5, 0x6b7686); // bandeja
+    for (const [dx, dz] of [[-0.46, -0.46], [0.46, -0.46], [-0.46, 0.46], [0.46, 0.46]]) {
+      v.span(cestaX + dx - 0.03, 0.09, cestaZ + dz - 0.03, cestaX + dx + 0.03, 0.62, cestaZ + dz + 0.03, PALETTE.metal);
+    }
+    v.span(cestaX - 0.5, 0.6, cestaZ - 0.5, cestaX + 0.5, 0.66, cestaZ + 0.5, PALETTE.metal); // aro superior
+    v.span(cestaX - 0.52, 0.14, cestaZ - 0.52, cestaX - 0.44, 0.56, cestaZ + 0.52, PALETTE.shirt); // lona
+    v.sphere(cestaX - 0.2, 0.28, cestaZ - 0.18, 0.14, PALETTE.ball);
+    v.sphere(cestaX + 0.2, 0.28, cestaZ + 0.12, 0.14, PALETTE.ball);
+    v.sphere(cestaX - 0.02, 0.5, cestaZ + 0.02, 0.14, PALETTE.ball);
+
+    /*
+     * MARCADOR DE FALTAS del banquillo: panel con dos columnas de bloques.
+     *
+     * Sin texto (no hay nada que traducir): la fila superior está apagada y la de
+     * abajo encendida, que es como se lee un marcador de faltas de un vistazo.
+     */
+    const mx = -3.35;
+    const mz = z0 + 0.45;
+    v.span(mx - 0.08, 0, mz - 0.08, mx + 0.08, 1.1, mz + 0.08, PALETTE.metal);
+    v.span(mx - 0.42, 1.1, mz - 0.12, mx + 0.42, 1.62, mz + 0.12, 0x1f2937);
+    for (let i = 0; i < 4; i++) {
+      for (const dx of [-0.24, 0.12]) {
+        const on = i < 2;
+        v.span(mx + dx, 1.18 + i * 0.1, mz + 0.12, mx + dx + 0.12, 1.26 + i * 0.1, mz + 0.16, on ? PALETTE.tallyOn : PALETTE.tallyOff);
+      }
+    }
   }, VOXEL * 2);
 }
 
@@ -359,11 +551,22 @@ export function createBallMesh(glb?: THREE.Object3D | null): THREE.Object3D {
   if (glb) {
     celdas = voxelizeObject(v, glb, {
       grid,
+      /*
+       * EL COLOR DE LA CORTEZA LO PONE LA PALETA, NO EL MODELO.
+       *
+       * El glTF trae la corteza en marrón (#864d24) y una banda casi negra
+       * (#01050b). Con `colorOf` devolviendo el color del material, el naranja de
+       * `PALETTE.ball` no llegaba nunca y encima el AO por vértice lo oscurecía
+       * más: medido en escena, la corteza salía en #3d1304, es decir un balón
+       * marrón oscuro, casi negro. Del modelo se aprovecha la FORMA; del color,
+       * sólo se distingue la banda oscura, que se convierte en costura.
+       */
       colorOf: (m) => {
         const mat = (Array.isArray(m.material) ? m.material[0] : m.material) as
           | THREE.MeshStandardMaterial
           | undefined;
-        return mat?.color?.getHex() ?? PALETTE.ball;
+        const hex = mat?.color?.getHex() ?? PALETTE.ball;
+        return luminance(hex) < 0.22 ? SEAM : PALETTE.ball;
       },
     });
   }
@@ -403,9 +606,7 @@ export function createBallMesh(glb?: THREE.Object3D | null): THREE.Object3D {
         const d2 = x * x + y * y + z * z;
         if (d2 > R * R || d2 < inner) continue;
         if (Math.abs(y - half) < w || Math.abs(x - half) < w || Math.abs(z - half) < w) {
-          // Marrón cálido en vez de negro: con negro la costura se leía como
-          // un agujero y el balón entero como un oso pardo.
-          v.putCell(i, j, k, 0x9c4f18);
+          v.putCell(i, j, k, SEAM);
         }
       }
     }

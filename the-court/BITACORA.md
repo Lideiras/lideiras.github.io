@@ -653,3 +653,276 @@ botellas), túnel (marco, interior escalonado, rótulo, focos), torres de luz
 - Gradas del glTF: sus caras enormes bloquean el hilo principal al rasterizar;
   hay que subdividir triángulos grandes antes.
 - FPS en GPU real (SwiftShader en el entorno de pruebas).
+
+---
+
+## 3i. Cuarta iteración: el pase de sombras, medido y recortado
+
+**Sesión:** 13 oct 2026 · **Origen:** informe [`../analisis-mejoras-the-court.md`](../analisis-mejoras-the-court.md), hallazgo 1 y fase 3.
+
+### Cómo se midió (importante)
+
+`renderer.info` **no cuenta el pase de sombras**: en Three.js `info.reset()` va
+después de `shadowMap.render()` (`three.module.js` 30081 vs 30087). El «173 draw
+calls de sombras» de la auditoría anterior salía del grafo de escena, no del
+contador.
+
+Para esta iteración la sonda envuelve `renderer.getContext()` y cuenta
+`drawElements` / `drawArrays` / variantes *instanced*, atribuyendo cada llamada
+al pase visible o al mapa de sombras según `renderer.getRenderTarget()`. Es la
+cuenta real de comandos de dibujo, con triángulos reales (instanciados ×
+`instanceCount`). 7 vistas: juego (`__court.freeze = true`) + las 6 secciones con
+los `pos`/`look` de `SECTION_CAMERA`/`INTERVIEW`, a 827 × 977 px.
+
+### Lo implementado
+
+| Cambio | Archivo |
+|---|---|
+| `shadowMap.autoUpdate = false` + `bakeShadows()` (y rehornear expuesto en `__court`) | `src/game/main.ts` |
+| `castShadow` fuera en jugador y balón | `src/game/main.ts` |
+| `castShadow` fuera en reportero, operador y muro del plató | `src/game/builders/tv.ts` |
+| `castShadow` fuera en vegetación y torres de luz | `src/game/builders/court.ts` |
+| `VOXEL_MATERIAL` único compartido + `noCastShadow()` + opción `castShadow` en `build()` | `src/game/builders/util.ts` |
+
+### Resultado medido (draw calls · triángulos por fotograma)
+
+| Vista | Antes | Ahora | Ahorro |
+|---|---|---|---|
+| juego | 272 · 778.794 | **98 · 411.312** | −174 (−64 %) · −367.482 (−47 %) |
+| entrevista | 277 · 793.736 | **103 · 426.254** | −174 (−63 %) · −367.482 (−46 %) |
+| proyectos | 220 · 726.736 | **46 · 359.254** | −174 (−79 %) · −367.482 (−51 %) |
+| skills/stats | 223 · 707.168 | **49 · 339.686** | −174 (−78 %) · −367.482 (−52 %) |
+| récord | 220 · 726.520 | **46 · 359.038** | −174 (−79 %) · −367.482 (−51 %) |
+| sobre mí | 223 · 706.546 | **49 · 339.064** | −174 (−78 %) · −367.482 (−52 %) |
+| experiencia | 222 · 716.084 | **48 · 348.602** | −174 (−78 %) · −367.482 (−51 %) |
+
+Horneado: **174 → 65 draw calls** y **367.482 → 198.932 triángulos**. Materiales
+únicos: **193 → 18** (los `MeshStandardMaterial` de 185 a 10).
+
+### Cómo se verificó que no cambia el aspecto
+
+* Mapa recién horneado **vs** `shadowMap.enabled = false` (quita `USE_SHADOWMAP`
+  del shader, no sólo el horneado): **0 píxeles de diferencia, máximo 0 por
+  canal, en las 7 vistas**, con el código original (173 proyectantes) y con el
+  nuevo (65).
+* Argumento de monotonía: si el conjunto completo de sombras deja el fotograma
+  idéntico al mismo sin sombras, cualquier subconjunto también.
+
+### Lo rechazado (con medición, para que no se reintente a ciegas)
+
+Ajustar el frustum de la cámara de sombras a la pista (±19 × ±16, near 32, far
+48) **cambia el aspecto**: al pasar el rango de profundidad de 85 m a 16 m el
+`bias` efectivo y el radio de la PCF cambian y **reaparecen sombras** que el
+sesgo actual tapa (gradas, vallas, banquillo, postes, muro del plató): hasta
+**29.575 píxeles** con **61 niveles** de diferencia. Y no ahorra nada: el
+horneado dibuja los mismos 65 draw calls con los dos marcos. Se deja como estaba.
+
+El **público nunca proyectó sombra**: `InstancedMesh` es un `Mesh` y
+`castShadow` viene en `false` por defecto (los 5 instanciados no estaban entre
+los 173 proyectantes). Anotado en el código.
+
+### Estado
+
+`npx tsc --noEmit` 0 errores · `npm test` **65/65** · `npm run build` ✓
+(prebuild con `validate --strict` + `classic` incluidos).
+
+### Pendiente
+
+- Fase 3: grano del personaje, Inter fuera/latin-only, `preload` de modelos.
+- FPS en GPU: el bucle del panel sigue clavado en 30 fps (techo del compositor,
+  no de la GPU), así que aquí se certifican draw calls y triángulos, no FPS.
+
+---
+
+## 3j. Quinta iteración: fases 1-2-4 del informe y paneles con pestañas
+
+**Sesión:** 13 oct 2026 · **Origen:** informe [`../analisis-mejoras-the-court.md`](../analisis-mejoras-the-court.md), fases 1, 2, 4 y §5 (paneles). Lo de la fase 3 ya está en §3i.
+
+### Fase 1 · «que no se vea roto»
+
+| Defecto | Qué se hizo | Cómo se verificó |
+|---|---|---|
+| D1 balón marrón | El color de la corteza lo pone la PALETA, no el material del glTF: `colorOf` devuelve `SEAM` sólo si la luminancia del material es < 0,22 (la banda oscura del modelo), y el resto va a `PALETTE.ball`. Además la costura pasa de 2 celdas a 1 | `tests/ball.test.ts` (+2): cuero > 70 % de la corteza, costuras > 3 %, rojo máximo > 230 |
+| D2 cuadro de tiro / z-fighting del tablero | Corregido en `props.ts` | capturas de la sección Proyectos |
+| D3 cartel de la mesa de anotadores | Corregido en `props.ts` | capturas |
+| D4 etiquetas fuera y solapadas | Recorte por CAJA REAL (`offsetWidth`) + 3 pasadas de empuje en vertical | `getBoundingClientRect`: a 828 px y a 1.440 px, **6/6 dentro y 0 solapes** (antes: 3 fuera a 828, 2 solapadas a 1.440) |
+| D9 fuentes que nadie usa | Inter FUERA del paquete (medido con `document.fonts`: sus caras quedaban `unloaded` en las dos páginas) y subsets `latin` en lugar de `index.css` | `dist/assets`: sólo Bebas + Silkscreen |
+| Carga | `public/models/voxel-court.glb` (7,8 MB) sale del build a `assets-src/`; la cancha es procedural | `dist` = **982 kB**, 18 ficheros |
+
+### Fase 2 · «que se vea apoyado»
+
+* **Foco clave inclinado**: `ceiling` pasa de `(1,5, 42, 3)` a **`(10, 34, 12)`**, 2,0; marco de sombras ±30 × ±26 con `far` 110, `bias` −0,0002 y `normalBias` 0,05. El sol exterior **se elimina**: bajo techo ninguna luz viene de fuera y, con el foco sesgado, la sombra sale de la silueta.
+* **Reequilibrio**: hemisférica 0,55 → **0,38**, rebote cálido 0,45 desde abajo, relleno frío 0,62 del lado de la cámara (el naranja del balón salía marrón por estar el relleno detrás), 4 torres a 0,7.
+* **Sombra de contacto** del jugador (1,2 m) y del balón (0,34 m): textura de 64² generada, opacidad que se aclara con la altura.
+* **El público PROYECTA sombra** (`castShadow` en los 5 instanciados): con el foco inclinado, cada fila proyecta sobre la de delante.
+
+### Fase 4 · pabellón (parcial)
+
+* **Público vivo**: oscilación de 4,5 cm en el vértice (uniform único compartido por las 5 piezas; la fase de cada asiento sale de su propia `instanceMatrix[3]`, así que no se toca ni una matriz en CPU). Longitud de onda ~25 m: olas que recorren la grada, no temblor por asiento.
+* **Medición** con `gl.readPixels` del fotograma completo (828 × 1.033) separando dos capturas 0,7 s: control (dos renders seguidos sin avanzar el reloj) **0 píxeles**; banda del graderío **5.678 píxeles cambiados** de 53.820 muestreados (10,5 %); el resto del fotograma, sólo el jugador y el balón.
+* El balanceo se para con `prefers-reduced-motion` (ver abajo).
+
+### Paneles de sección (§5 del informe)
+
+* **Pestañas accesibles**: `role="tablist"/"tab"/"tabpanel"`, `aria-selected`, `aria-controls`, `aria-labelledby`, foco móvil (`tabindex` 0 sólo en la activa), flechas ←/→ + Inicio/Fin. Barra **pegajosa** al hacer scroll y, al cambiar de pestaña, el cuerpo vuelve arriba.
+* **Proyectos**: `Todo · 10` + una pestaña por año (2025 · 1, 2023 · 2, 2022 · 4, 2021 · 3). Ficha con título y año en la misma línea, resumen de una frase y el párrafo largo plegado en «Detalles del proyecto».
+* **Skills**: una pestaña por grupo; cada fila lleva nombre, barra y **número /10** (una barra de 10 muescas se lee a bulto).
+* **Experiencia**: `Todo · 11` / `Trabajo · 4` / `Estudios · 5` / `Deporte · 2`, ordenado por fecha descendente, con la fecha en la cabecera y legible (`feb 2025 – Actualidad` en lugar de `2025-02`).
+* **Sobre mí**: un tema por pestaña (Presentación, Desarrollo web, Videojuegos, Ciberseguridad, Fuera de la pista) + Datos. El reparto es posicional: si no hay párrafo, la pestaña no se dibuja; si hay párrafos nuevos, caen en la última en vez de desaparecer.
+* **Récord**: cuatro cifras grandes y, sin tiros, un aviso que invita a jugar en lugar de una tabla de ceros.
+* **Contacto**: el CV sigue arriba, y el formulario se separa en `Mensaje` / `Contacto directo`.
+* **Texto corrido en tipografía de sistema** (`--font-body`, 0 KB: no viaja ninguna fuente) con 1,6 de interlineado; Silkscreen se queda en títulos, chips, badges y botones.
+* **Panel lateral a partir de 900 px**: deja la escena a la vista (era modal y tapaba justo lo que se acababa de encuadrar); por debajo sigue centrado.
+* **Trampa de foco arreglada**: descarta lo que no se ve (`offsetParent`) y cuenta `summary`, que es focusable de verdad. Antes, con un `<details>` plegado, el «último» de la lista podía ser invisible y el tabulador se escapaba del diálogo.
+
+### HUD
+
+* **Menú ☰ con estado por sección**: ✓ visitada, ○ pendiente, ✕ bloqueada (zona de tiro sin encestar), con el estado también en texto para lectores de pantalla. Cierra con **Esc** y con **clic fuera**. Verificado en navegador con los tres estados.
+* **Iconos dibujados** (SVG de 16 px con `shape-rendering: crispEdges`) en lugar de los emoji del sistema 🔊/🔇/☰.
+* **Puerta de idioma**: `ASK_EVERY_VISIT = false`. Ya no obliga a decidir en cada recarga para acabar en el mismo sitio, y el HUD tiene EN/ES a un clic.
+* **`prefers-reduced-motion`**: se congela el reloj de las animaciones en el bucle (`update(dt, reduced ? 0 : clock.elapsedTime)`). Con una sola línea se paran el pulso de los anillos, el parpadeo del ON AIR, el bote del balón, el balanceo del público y las animaciones del personaje, sin parar el juego (que va por `dt`).
+
+### Estado
+
+`npx tsc --noEmit` 0 errores · `npm test` **67/67** · `npm run build` ✓ (prebuild con
+`validate --strict` + `classic`) · `dist` **982 kB** en 18 ficheros.
+
+### Pendiente
+
+* **Fase 4**: emisivos + glow, materiales con `PMREM`, cámara con adelanto, encuadre por
+  formato (vertical) y repetición tras canasta.
+* **Fase 3**: grano del personaje y `preload` de modelos.
+* **Fase 5 (juego)**: colisiones, reglas 2/3 puntos, logros, modo desafío, NPC, compartir
+  récord, ayuda/pausa y ajustes.
+* **No medido**: FPS real (el bucle del panel sigue clavado a 30 fps, techo del
+  compositor), móvil real, Safari/iOS y red lenta; `prefers-reduced-motion` está
+  verificado por código, no emulado en el navegador.
+
+---
+
+## 3k. Corrección de método: cómo se mide si una sombra se ve
+
+El método que se usó en §3i para decir «las sombras no aportan nada» —comparar el fotograma
+con `renderer.shadowMap.enabled = false`— **no es válido**: Three.js no recompila los
+materiales al cambiar ese interruptor, así que el programa cacheado sigue teniendo
+`USE_SHADOWMAP` y el fotograma sale idéntico **aunque las sombras se estén viendo**. Los «0
+píxeles» de §3i no prueban nada (están corregidos en `../analisis-mejoras-the-court.md` §12.5).
+
+El método válido es apagar **`light.castShadow`**: eso cambia la `version` del estado de luces
+y obliga a recompilar. Con él, en el estado actual (foco ya inclinado) y midiendo píxeles con
+`gl.readPixels` (control de dos renders seguidos: **0 px**, así que la medida es reproducible):
+
+| Vista | Píxeles que cambian al apagar las sombras | % | Δ máx. |
+|---|---:|---:|---:|
+| juego (828 × 1.033) | 34.485 / 855.324 | **4,0 %** | 65 |
+| sección Proyectos | 65.113 / 855.324 | **7,6 %** | 58 |
+
+Es decir: **el pase de sombras sí se ve** con el foco inclinado (con la luz casi vertical caía
+dentro de la silueta de cada objeto y no se veía). Se probaron tres posiciones de foco para
+elegir la que está en el código: `(10, 34, 12)` da 4,0 % / 7,6 %; `(24, 30, 6)` da
+4,9 % / 13,6 %; `(0, 34, −16)` da 6,8 % / 1,4 %. Se queda la primera: es la del informe (foco
+de techo del lado de la cámara) y da sombra visible sin comerse la pista.
+
+La selección de proyectantes de §3i **sigue siendo correcta**: volviendo a encender
+`castShadow` en los 16 meshes del atrezo que se dejaron fuera (vegetación, torres de luz y
+muro del plató) la diferencia es de **0 píxeles** en la vista de juego y en la de Proyectos.
+
+---
+
+## 3l. Fusión de mallas estáticas por material
+
+**Sesión:** 13 oct 2026 (misma sesión que §3k) · **Informe:** `../analisis-mejoras-the-court.md` §14.
+
+### El problema
+
+El material único de §3i dejó las mallas del mundo compartiendo shader y estado, pero cada una
+seguía siendo **una llamada de dibujo**. En el pase visible —el único que se paga cada
+fotograma, porque el mapa de sombras se hornea una vez— eran **95 llamadas** en la vista de
+juego y **44-102** en las seis secciones. La mitad del coste de una llamada de dibujo en WebGL
+no es dibujar: es validar estado y rebotar en la CPU.
+
+### Lo implementado
+
+`src/game/builders/batch.ts` (nuevo) y una llamada en `main.ts` antes de `bakeShadows()`:
+
+* Cuece el `matrixWorld` de cada malla en la posición y la normal (matriz de normales), así que
+  cada triángulo queda **donde estaba**.
+* Agrupa por estado de render: `castShadow` + `receiveShadow` + `renderOrder` + **celda de 24 m**
+  en XZ. Cada lote sigue culeándose con el frustum por su cuenta.
+* Deja fuera lo que se mueve (`exclude`): jugador, balón y los dos actores del plató. Su sombra
+  se hornearía congelada y su pose cambia cada fotograma.
+* `matrixAutoUpdate = false`; caja y esfera envolventes calculadas al construir (el culling y el
+  raycast del tiro no pagan un tirón en el primer uso).
+* Libera las geometrías originales **sólo si ya no las usa ninguna malla viva**: una geometría
+  puede estar compartida entre una malla fundida y otra que sigue suelta.
+
+### Resultado medido
+
+Contador de `draw*` a nivel de WebGL sobre un render explícito (no `renderer.info`, que no ve el
+pase de sombras), a 827 × 979 y con la cámara **ya en reposo** (al cargar sigue un lerp de ~1 s y
+eso movía las cuentas hasta ±10 llamadas). Celdas: `llamadas / triángulos`.
+
+| Vista | Sin fundir | Celda 12 m | **Celda 24 m (enviado)** |
+|---|---:|---:|---:|
+| juego · pase visible | 95 / 326.946 | 52 / 343.598 | **51 / 387.554** |
+| juego · horneado (una vez) | 70 / 281.388 | 11 / 281.388 | **9 / 281.388** |
+| Proyectos | 44 / 275.144 | 15 / 299.416 | **13 / 321.184** |
+| Skills | 47 / 255.552 | 16 / 285.692 | **15 / 329.648** |
+| Sobre mí | 47 / 255.066 | 14 / 270.594 | **13 / 314.550** |
+| Experiencia | 46 / 264.604 | 16 / 289.092 | **15 / 333.048** |
+| Entrevista | 102 / 342.768 | 73 / 351.512 | **72 / 394.784** |
+| Récord | 44 / 274.752 | 15 / 299.024 | **13 / 321.212** |
+
+Las siete vistas juntas pasan de **425 a 192 llamadas** (−55 %); el horneado, que se paga una
+vez, de 70 a **9**. El precio es el culling más grueso: **+20 % de triángulos** en el conjunto de
+las siete vistas (−11 % si se elige celda de 12 m, que a cambio cuesta +9 llamadas). Se deja 24 m
+y se apunta el barrido, que es lo que permite cambiar de idea con datos: el número de lotes es 6
+con 24 m y 9 con 12 m, y las llamadas de las secciones apenas se mueven (13-15 en cada una).
+
+El `cell` es un parámetro del gancho de desarrollo, y `?nobatch=1` (sólo en `import.meta.env.DEV`)
+carga la escena sin fundir: sin eso no hay forma de comparar, porque la fusión es destructiva y la
+escena de antes ya no existe. Verificado que el interruptor **no existe en el bundle**
+(`grep nobatch dist/assets/main-*.js` → 0) y que la fusión sí se ejecuta en producción.
+
+### Cómo se verificó que el aspecto no cambia
+
+En **la misma página**, dentro de una sola evaluación (así no corre ni un fotograma de la
+animación entre las dos capturas, que es lo que invalidaba los intentos anteriores):
+
+1. se encuadra cada sección, se llama a `renderer.render` + `gl.readPixels` → captura A;
+2. se llama a `batch()`;
+3. se repite el encuadre y la captura → captura B;
+4. control: **dos renders seguidos sin fundir** (0 píxeles de diferencia en las tres tandas, así
+   que la medida es reproducible).
+
+| Tanda | Vistas | Tamaño | Píxeles que cambian |
+|---|---|---:|---:|
+| 1 | Proyectos, Skills, Sobre mí, Experiencia, Entrevista, Récord | 828 × 1.035 | **0** |
+| 2 | Entrevista, Récord | 828 × 1.035 | **0** |
+| 3 | las seis secciones | 640 × 360 | **0** |
+
+### El detalle que casi lo rompe: renormar una normal que ya era unitaria
+
+El primer intento dio diferencias de 0,5-5 % de píxeles, con máximos de 112-228 niveles en
+puntos sueltos. La causa no era la geometría: era **normalizar normales que ya eran unitarias**
+(la división por la longitud, que es 1 ± 1 ulp, les cambia los últimos bits y eso se ve como un
+parpadeo de nivel por píxel en las caras grandes). Se arregló copiando **verbo a verbo** cuando
+`matrixWorld` es la identidad, que es el caso de 77 de las 81 mallas del mundo (sólo los cuatro
+cuerpos de la cámara de TV llevan traslación). Con eso las tres tandas bajan a 0 píxeles.
+
+### Estado
+
+`npx tsc --noEmit` 0 errores · `npm test` **67/67** · `npm run build` ✓ (prebuild con
+`validate --strict` + `classic`) · `dist` **986 kB**, sin el glb de 7,8 MB ni Inter · probado
+también sobre `vite preview` (producción): el log `[batch] fundidas 81 mallas -> 6 lotes` sale
+y no hay errores en consola.
+
+### Pendiente
+
+* El fundido **no cubre** los materiales que no son el voxel (público instanciado, anillos,
+  rótulos, actores): son 72 llamadas en la entrevista y 51 en juego con sólo ~14 meshes fuera
+  del lote, así que ahí queda el siguiente tramo.
+* Los lotes no se pueden **actualizar**: si algún día se mueve o se cambia algo del mundo
+  (una valla, una torre), hay que refundir esa parte; el camino fácil hoy es reconstruir.
+* Lo medido es coste de CPU/llamadas, **no FPS**: el bucle del panel sigue clavado a 30 fps por
+  el compositor, así que la ganancia de tiempo no se puede certificar aquí.

@@ -107,6 +107,17 @@ export interface VoxelizeMeshOptions {
   /** Color de respaldo si el material no trae ni textura ni color. */
   fallback?: number;
   /**
+   * Color OBLIGATORIO, por encima del que traiga el material.
+   *
+   * `fallback` sólo entra cuando el material no tiene color (o es blanco, que en
+   * glTF suele significar «sin dato»). Para el balón eso NO basta: su modelo
+   * trae la corteza en marrón (#864d24), que es un color válido, así que el
+   * naranja de la paleta nunca llegaba a la malla y el balón se veía marrón
+   * oscuro. Con `forceColor` la paleta manda y del modelo se aprovecha sólo la
+   * forma. La textura, si la hubiera, sigue teniendo prioridad.
+   */
+  forceColor?: number;
+  /**
    * Recorte opcional en metros. Sólo se marcan las celdas cuyo CENTRO cae
    * dentro. Sirve para voxelizar una franja de un modelo grande — el suelo de
    * la cancha dentro de un estadio entero — sin arrastrar el resto.
@@ -139,7 +150,7 @@ export function voxelizeMesh(target: VoxelWorld, mesh: THREE.Mesh, opts: Voxeliz
   if (map && !sample) {
     console.warn('[voxelize] la textura-paleta no se pudo leer; el modelo saldrá de color plano');
   }
-  const flat = materialColor(mat, opts.fallback ?? 0xffffff);
+  const flat = opts.forceColor ?? materialColor(mat, opts.fallback ?? 0xffffff);
 
   mesh.updateWorldMatrix(true, false);
   const world = mesh.matrixWorld;
@@ -290,12 +301,17 @@ export function voxelizeObject(
     // Cada malla reinicia la prioridad: el detalle (malla pequeña, procesada
     // después) debe ganar la celda a la masa, no competir por distancia.
     target.resetPriority();
+    const color = opts.colorOf?.(m);
     added += voxelizeMesh(target, m, {
       grid: opts.grid,
       tolerance: opts.tolerance,
       clip: opts.clip,
       minNormalY: opts.minNormalY,
-      fallback: opts.colorOf?.(m) ?? opts.fallback,
+      // `forceColor` cuando hay `colorOf`: el color que decide el juego manda
+      // sobre el que traiga el modelo. `fallback` se queda para el caso de que el
+      // material no traiga ninguno.
+      forceColor: color,
+      fallback: color ?? opts.fallback,
     });
   }
   return added;

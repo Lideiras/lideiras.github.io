@@ -1,4 +1,7 @@
-la iluminacion ya esta bien
-las lineas blancas de la cancha en el lado izquierdo son mas que en el lado derecho, correctamente estan en el lado izquierdo pero falta el correcto semicirculo del triple ya que no es el perimetro del triple continuo si no que se corta antes de llegar al fondo, actualmente no se ve el perimetro completo de la linea de triple
-
-tambien como extra, que la zona verde del medidor de tiro vaya de lado a lado de manera que el usuario tiene que tener en cuenta este movimiento para conseguir el tiro perfecto
+Agrega animaciones extra para el personaje jugable y los reporteros como movimiento de los brazon al botar, animacion sencilla de caida post salto de tiro, para los reporteros cierto movimiento que otorgue realismo, para el publico movimiento sencillo para dar realismo y mas animaciones sencillas que podamos implementar
+Los cuadros de texto con la informacion los quiero centrados en la pantalla no en un lateral
+El marcador superior no termina de mostrar correctamente el record del usuario, aparecen los numeros cortados por la mitad
+Mejora la iluminacion, hay focos en la parte superior de la cancha que deberian aportar luz ademas de que debemos modificar la luz para que se asemeje mas a la luz interior de un pabellon estilo nba
+Por alguna razon ocurre una mejora considerable en el rendimiento posterior a abrir alguna de las secciones y luego cerrarla respecto a la primera carga el juego sin abrir ningua seccion
+Las texturas de los cubos que conforman el personaje se solapan en algunas ocasiones, intenta investigar y que esto no ocurra
+Por ahora estas mejoras pero te pido que seas proactivo, que si consideras que se puede mejorar mas cosas tanto visuales como de rendimiento a lo largo de las implementaciones me las propongas para que las acepte o no

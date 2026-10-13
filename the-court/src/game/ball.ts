@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { BALL, G, RIM, SCORE_RADIUS, boardX, rimX, type Side } from './config';
+import { bounceBall, type Collider } from './collide';
 
 export interface BallEvents {
   score?: (side: Side) => void;
@@ -19,7 +20,17 @@ export class Ball {
   private age = 0;
   private readonly prev = new THREE.Vector3();
 
-  constructor(readonly object: THREE.Object3D, private readonly ev: BallEvents = {}) {}
+  /**
+   * `solids` son los volúmenes de la pista (vallas, banquillo, mesa, postes…).
+   * Se pasan al constructor y no a `step()` para que la integración —que va a
+   * 120 Hz— los tenga siempre: a 9 m/s el balón avanza 7,5 cm por subpaso, y
+   * resolverlo una vez por fotograma lo dejaría atravesar vallas de 24 cm.
+   */
+  constructor(
+    readonly object: THREE.Object3D,
+    private readonly ev: BallEvents = {},
+    private readonly solids: Collider[] = [],
+  ) {}
 
   launch(from: THREE.Vector3, vel: THREE.Vector3): void {
     this.pos.copy(from);
@@ -65,6 +76,18 @@ export class Ball {
       if (impact > 1.2) this.ev.bounce?.(impact);
       if (vel.y < 0.8) vel.y = 0;
     }
+    /*
+     * Volúmenes de la pista. Se resuelve DESPUÉS del suelo: si el balón entra en
+     * una esquina entre el parquet y una valla, la resolución del suelo no puede
+     * dejarlo por debajo y la de la valla lo saca por el lado.
+     */
+    if (this.solids.length) {
+      const antes = Math.hypot(vel.x, vel.y, vel.z);
+      if (bounceBall(pos, vel, BALL.radius * BALL.visualScale, this.solids) && antes > 1.4) {
+        this.ev.bounce?.(antes);
+      }
+    }
+
     if (pos.y <= BALL.radius + 1e-3 && vel.y === 0) {
       const f = Math.max(0, 1 - 2.2 * dt);
       vel.x *= f;

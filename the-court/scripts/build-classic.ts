@@ -25,7 +25,9 @@ const html = `<!doctype html>
 *{box-sizing:border-box}
 html[data-l=es] [lang=en],html[data-l=en] [lang=es]{display:none}
 /* Estética voxel: sin border-radius, bordes gruesos y sombra dura. */
-body{margin:0;font:15px/1.65 'Inter',system-ui,sans-serif;background:#0b1020;color:#f1f5f9}
+/* Texto corrido en tipografía de sistema (igual que los paneles del juego):
+   la versión clásica es casi todo prosa, y en pixel se lee mal. */
+body{margin:0;font:15px/1.65 system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background:#0b1020;color:#f1f5f9}
 main{max-width:880px;margin:0 auto;padding:2rem 1rem 4rem}
 h1,h2,h3{font-family:'Silkscreen','Bebas Neue',monospace;letter-spacing:.06em;line-height:1.25}
 h1{font-size:2rem;margin:.2rem 0}

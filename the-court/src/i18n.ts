@@ -85,6 +85,11 @@ export const UI = {
   },
   menu: { es: 'Menú', en: 'Menu' },
   menu_title: { es: 'Ir directo a una sección', en: 'Jump to a section' },
+  /* Estado de cada sección en el menú (se lee en voz alta, la marca es un
+     símbolo y va oculta). */
+  state_done: { es: 'visitada', en: 'visited' },
+  state_open: { es: 'pendiente', en: 'pending' },
+  state_locked: { es: 'bloqueada, encesta para abrirla', en: 'locked, score to unlock' },
   close: { es: 'Cerrar', en: 'Close' },
   lang_toggle: { es: 'Cambiar idioma', en: 'Change language' },
   mute: { es: 'Silenciar', en: 'Mute' },
@@ -115,6 +120,23 @@ export const UI = {
   cv_note: {
     es: 'Una página, formato PDF',
     en: 'One page, PDF format',
+  },
+  /* Pestañas de los paneles de sección. Los rótulos de grupo (años, tipos de
+     hito, grupos de skills) salen de los datos y no se traducen aquí. */
+  tabs_label: { es: 'Pestañas de la sección', en: 'Section tabs' },
+  tabs_all: { es: 'Todo', en: 'All' },
+  proj_details: { es: 'Detalles del proyecto', en: 'Project details' },
+  tab_intro: { es: 'Presentación', en: 'Introduction' },
+  tab_web: { es: 'Desarrollo web', en: 'Web development' },
+  tab_games: { es: 'Videojuegos', en: 'Games' },
+  tab_security: { es: 'Ciberseguridad', en: 'Cybersecurity' },
+  tab_offcourt: { es: 'Fuera de la pista', en: 'Off the court' },
+  tab_facts: { es: 'Datos', en: 'Facts' },
+  tab_message: { es: 'Mensaje', en: 'Message' },
+  tab_direct: { es: 'Contacto directo', en: 'Direct contact' },
+  stats_hint: {
+    es: 'El récord se guarda en este navegador: no hace falta cuenta ninguna.',
+    en: 'The record is kept in this browser: no account needed.',
   },
   skills_level: { es: 'Nivel', en: 'Level' },
   about_number: { es: 'Dorsal', en: 'Jersey' },

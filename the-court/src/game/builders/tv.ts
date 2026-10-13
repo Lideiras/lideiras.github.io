@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { buildHuman, type HumanRig } from './human';
-import { PALETTE, VOXEL, VoxelWorld, canvasTexture, voxelGroup } from './util';
+import { PALETTE, VOXEL, VoxelWorld, canvasTexture, noCastShadow, voxelGroup } from './util';
 
 export interface InterviewSet {
   group: THREE.Group;
@@ -70,7 +70,9 @@ function onAirTexture(on: boolean): THREE.CanvasTexture {
 export function buildInterviewSet(): InterviewSet {
   const group = new THREE.Group();
 
-  const setVox = voxelGroup('setDressing', (v) => {
+  // El fondo del plató es un muro: con la luz del techo su sombra cae DETRÁS
+  // del muro, sobre el zócalo que ya está a oscuras. Medido: 0 píxeles.
+  const setVox = noCastShadow(voxelGroup('setDressing', (v) => {
     // Fondo del plató + franja naranja.
     v.span(6.8, 0, 11.2, 12.2, 2.6, 11.32, 0x111827);
     v.span(6.8, 2.0, 11.16, 12.2, 2.16, 11.22, PALETTE.shirt);
@@ -78,7 +80,7 @@ export function buildInterviewSet(): InterviewSet {
     v.span(6.6, 0, 10.9, 12.4, 0.08, 11.5, 0x0b1220);
     // Grano GRUESO: es un muro plano de 5,4 x 2,6 m. A 3 cm costaba 75.000
     // triángulos de superficie lisa que no se distinguen en pantalla.
-  }, VOXEL * 4);
+  }, VOXEL * 4));
   group.add(setVox);
 
   const onAirTex = onAirTexture(false);
@@ -123,6 +125,11 @@ export function buildInterviewSet(): InterviewSet {
   operator.root.rotation.y = -Math.PI / 2;
 
   group.add(reporter.root, cam.group, operator.root);
+  // Los dos actores del plató se mueven (y el reportero sostiene el micro que ya
+  // cuelga de su brazo), así que NO pueden proyectar sobre un mapa de sombras
+  // congelado: dejarían su silueta clavada en el suelo del plató.
+  noCastShadow(reporter.root);
+  noCastShadow(operator.root);
   return { group, reporter, operator, tally: cam.tally, onAir };
 }
 

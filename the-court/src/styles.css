@@ -21,8 +21,12 @@
   --ok: #22c55e;
   --warn: #facc15;
   --shadow: #050810;
-  --font: 'Silkscreen', 'Inter', system-ui, sans-serif;
+  --font: 'Silkscreen', system-ui, sans-serif;
   --display: 'Silkscreen', 'Bebas Neue', Impact, sans-serif;
+  /* Texto corrido: tipografía de sistema. Es gratis (0 KB: no viaja ninguna
+     fuente) y tiene minúsculas de verdad, que es lo que hace legible un párrafo
+     de cuatro líneas. La pixel se queda para títulos, etiquetas y botones. */
+  --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --bw: 3px; /* grosor de borde estándar */
 }
 
@@ -137,6 +141,13 @@ button { font: inherit; cursor: pointer; }
   padding: .7rem .8rem; text-decoration: none; font-size: .85rem;
 }
 .menu button:hover, .menu a:hover { background: var(--accent); color: #fff; }
+/* Estado de cada sección: marca a la izquierda y rótulo. El estado NO se
+   comunica bajando el contraste del texto (que era el problema de las etiquetas
+   bloqueadas): el rótulo se queda en su color y el símbolo es el que cambia. */
+.menu__item { display: flex; align-items: center; gap: .5rem; }
+.menu__mark { font-family: var(--display); font-size: .85rem; width: 1rem; text-align: center; color: var(--muted); }
+.menu__item--done .menu__mark { color: var(--ok); }
+.menu__item--locked .menu__mark { color: var(--warn); }
 
 .hud__labels { position: absolute; inset: 0; pointer-events: none; }
 .label {
@@ -319,7 +330,14 @@ button { font: inherit; cursor: pointer; }
   background: var(--panel); color: var(--text);
   box-shadow: 4px 4px 0 var(--shadow); font-size: 1rem;
 }
-.panel__body { padding: 1.25rem; overflow: auto; }
+/*
+ * El cuerpo del panel NO lleva `padding-top`: la primera pieza se separa con su
+ * propio margen. Así la barra de pestañas puede quedarse pegada al borde de
+ * arriba al hacer scroll (`position: sticky`) sin que se cuele texto por la
+ * franja de relleno, que es lo que pasaría con el relleno en el contenedor.
+ */
+.panel__body { --pad: 1.25rem; padding: 0 var(--pad) 2.5rem; overflow: auto; }
+.panel__body > :first-child { margin-top: var(--pad); }
 .panel__body h3 { margin: 0 0 .4rem; font-family: var(--display); letter-spacing: .04em; }
 
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; }
@@ -333,7 +351,12 @@ button { font: inherit; cursor: pointer; }
 .muted { color: var(--muted); }
 .lead { font-size: 1rem; }
 
-.stat { display: grid; grid-template-columns: 9rem 1fr; gap: .8rem; align-items: center; margin: .5rem 0; }
+/* Fila de skill: nombre · barra · número. El número está porque una barra de
+   10 muescas se lee a bulto; con la cifra al lado no hay que contar píxeles. */
+.stat { display: grid; grid-template-columns: minmax(7rem, 11rem) 1fr 3.2rem; gap: .8rem; align-items: center; margin: .5rem 0; }
+.stat__name { font-family: var(--font-body); }
+.stat__lv { font-family: var(--display); font-size: 1rem; text-align: right; color: var(--text); }
+.stat__lv small { font-size: .68rem; color: var(--muted); }
 
 /* Barra de nivel 1–10 con 10 muescas de píxel */
 .bar {
@@ -400,7 +423,7 @@ body[data-mode='interview'] .panel__card { pointer-events: auto; width: min(460p
 
 @media (max-width: 700px) {
   body[data-mode='interview'] .panel { place-items: end center; }
-  .stat { grid-template-columns: 6.5rem 1fr; }
+  .stat { grid-template-columns: minmax(5.5rem, 8rem) 1fr 2.6rem; }
   .label { font-size: .7rem; }
 }
 
@@ -450,3 +473,112 @@ body[data-mode='interview'] .panel__card { pointer-events: auto; width: min(460p
 @media (max-width: 520px) {
   .hud__record { right: 8px; bottom: 8px; font-size: .7rem; padding: .25rem .45rem; }
 }
+
+/* ── Paneles de sección: pestañas, texto corrido y fichas ────────────────
+ * El problema que resuelve este bloque: las seis secciones eran UNA lista
+ * seguida (diez proyectos, seis grupos de skills, once hitos) con los párrafos
+ * en tipografía pixel y todo en la misma columna. Aquí se separa el contenido
+ * por pestañas, se pasa el texto largo a una fuente de sistema y se le da
+ * jerarquía a cada ficha (título, resumen, detalle plegable, etiquetas).
+ */
+
+/* Texto corrido en fuente de sistema. Sólo párrafos, listas y campos: los
+   títulos, chips, badges y botones siguen en pixel. */
+.panel__body p,
+.panel__body li p,
+.panel__body .prose,
+.panel__body input,
+.panel__body textarea,
+.form-status {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.6;
+}
+.panel__body .prose + .prose { margin-top: .9rem; }
+.panel__body h3 { font-size: 1rem; }
+
+.tabs { display: flex; flex-direction: column; }
+
+/* Barra de pestañas pegajosa: al bajar por una lista larga (diez proyectos,
+   once hitos) las pestañas siguen a la vista, así que cambiar de año o de tipo
+   de hito no obliga a subir. Los márgenes negativos son para que su fondo tape
+   el ancho completo del panel y no se vea texto pasando por los lados. */
+.tabs__list {
+  position: sticky; top: 0; z-index: 2;
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin: 0 calc(-1 * var(--pad, 1.25rem)) .8rem;
+  padding: .75rem var(--pad, 1.25rem) .7rem;
+  background: var(--panel);
+  border-bottom: 3px solid var(--line-hi);
+}
+.tabs__list button {
+  border: var(--bw) solid var(--line-hi); border-radius: 0;
+  background: var(--panel-2); color: var(--muted);
+  font-family: var(--display); font-size: .72rem; letter-spacing: .05em;
+  padding: .5rem .7rem; box-shadow: 3px 3px 0 var(--shadow);
+}
+.tabs__list button:hover { color: var(--text); background: #22304f; }
+.tabs__list button[aria-selected='true'] {
+  background: var(--accent); border-color: #fff; color: #fff;
+  box-shadow: 3px 3px 0 var(--shadow), inset 0 -4px 0 var(--accent-dark);
+}
+.tabpanel { padding-top: .2rem; }
+.tabpanel__title { margin: 0 0 .8rem; }
+
+/* Ficha de proyecto: título y año en la misma línea, resumen en una frase y el
+   párrafo largo plegado, que es lo que permite que diez proyectos quepan sin
+   convertirse en un muro de texto. */
+.proj { display: flex; flex-direction: column; }
+.proj header { display: flex; justify-content: space-between; align-items: baseline; gap: .6rem; }
+.proj header h3 { margin: 0; }
+.proj__year {
+  font-family: var(--display); font-size: .76rem;
+  padding: .1rem .45rem; background: var(--line); border: 2px solid var(--line-hi); color: #fff;
+}
+.proj__summary { margin: .35rem 0 .5rem; }
+.proj__more { margin-bottom: .4rem; }
+.proj__more summary {
+  cursor: pointer; color: var(--accent);
+  font-family: var(--display); font-size: .72rem; letter-spacing: .05em;
+  padding: .2rem 0;
+}
+.proj__more summary:hover { color: #fff; }
+.proj__more p { margin: .35rem 0 0; color: var(--muted); }
+
+/* Hitos: la fecha pasa a la cabecera, junto al tipo, para que el ojo pueda
+   recorrer sólo izquieda (tipo) y derecha (fecha) sin leer el párrafo. */
+.timeline li > header { display: flex; align-items: center; justify-content: space-between; gap: .6rem; flex-wrap: wrap; margin-bottom: .35rem; }
+.timeline li h3 { margin: 0; }
+.timeline li p { margin: 0 0 .3rem; }
+.tl__when { font-family: var(--display); font-size: .72rem; letter-spacing: .04em; color: var(--muted); }
+.tl__org { color: var(--muted); font-size: .95rem; }
+
+/* Lista de skills sin viñetas: cada fila ya es una barra. */
+.skills { list-style: none; margin: 0; padding: 0; }
+
+/* Cifras del récord: el número manda y la etiqueta sólo lo nombra. */
+.highlights--big dd { font-size: 1.9rem; line-height: 1.15; }
+
+/* Panel lateral en pantallas anchas.
+ *
+ * El panel era modal y a pantalla completa, así que tapaba justo la escena que
+ * el jugador acababa de encuadrar para abrirlo (y en la entrevista ya se usaba
+ * el patrón contrario, el tercio inferior). A partir de 900 px se ancla a la
+ * derecha y la pista se queda a la vista; por debajo sigue centrado, que en
+ * móvil una columna estrecha pegada a un lado no se lee mejor. */
+@media (min-width: 900px) {
+  .panel {
+    place-items: stretch end; padding: 0;
+    background: linear-gradient(90deg, rgba(5, 8, 18, .35) 0%, rgba(5, 8, 18, .6) 55%, rgba(5, 8, 18, .78) 100%);
+  }
+  .panel__card {
+    width: min(620px, 94vw); height: 100dvh; max-height: 100dvh;
+    border-right-width: 0; box-shadow: 8px 0 0 var(--shadow);
+  }
+  .panel__body { --pad: 1.75rem; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+}
+
+/* Con el panel a un lado, el HUD de la derecha (récord) queda debajo: se
+   aparta para que no asome por debajo de la tarjeta. */
+body[data-mode='panel'] .hud__record { opacity: .35; }

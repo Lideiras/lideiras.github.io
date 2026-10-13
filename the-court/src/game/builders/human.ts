@@ -27,6 +27,16 @@ export interface HumanOptions {
   /** Color de acento único: cinturilla, muñequeras, franjas (guía §10.1). */
   accent?: number;
   number?: string;
+  /** Anisotropía máxima del renderer, para el dorsal (se ve muy reducido). */
+  anisotropy?: number;
+  /**
+   * Funde los colores de cada pieza en una sola malla (por defecto sí).
+   *
+   * Se puede apagar para MEDIR: comparando la firma geométrica del rig fundido
+   * con la del rig sin fundir se comprueba que no se pierde ni un triángulo ni un
+   * color (BITACORA §3m). `false` reproduce el comportamiento anterior.
+   */
+  mergeColors?: boolean;
 }
 
 export interface HumanRig {
@@ -50,14 +60,21 @@ export interface HumanRig {
 }
 
 /** Textura del dorsal: cada carácter del número son 5x7 píxeles cuadrados. */
-function numberTexture(text: string): THREE.CanvasTexture {
+function numberTexture(text: string, anisotropy?: number): THREE.CanvasTexture {
   const px = 6; // lado de cada píxel-art en el canvas
   const w = Math.max(1, pixelTextWidth(text, px));
   const h = 7 * px;
-  return canvasTexture(w, h, (g) => {
-    g.clearRect(0, 0, w, h);
-    drawPixelText(g, text, 0, 0, px, '#ffffff');
-  });
+  return canvasTexture(
+    w,
+    h,
+    (g) => {
+      g.clearRect(0, 0, w, h);
+      drawPixelText(g, text, 0, 0, px, '#ffffff');
+    },
+    // Con mipmaps: el dorsal mide 0,3 m y se mira desde 16 m, así que la textura
+    // se reduce mucho. Sin ellos, los dígitos se ven rotos a distancia.
+    { mipmaps: true, anisotropy },
+  );
 }
 
 /* ===========================================================================
@@ -210,7 +227,20 @@ export function buildHuman(o: HumanOptions): HumanRig {
   const part = (name: string, draw: (v: Grid) => void): THREE.Group => {
     const v = new VoxelWorld(CHAR_VOXEL);
     draw(designGrid(v));
-    return v.build({ name });
+    /*
+     * UNA malla por pieza, no una por color.
+     *
+     * El constructor emite una malla por tonalidad, y cada malla es una llamada
+     * de dibujo por fotograma: el rig del jugador salía con 30 (cabello, piel,
+     * camiseta, pantalón, zapatilla, acento... repetidos en cada pieza) y los dos
+     * actores del plató con ~30 cada uno. Fundir los colores en una geometría con
+     * color por vértice deja el rig en 8-9 llamadas y el resultado es idéntico
+     * (caras opacas, mismo material con `vertexColors`).
+     *
+     * El mundo estático NO necesita esto: `batch.ts` lo funde igual en el
+     * arranque. Aquí sí, porque el rig no se puede fundir: se mueve cada fotograma.
+     */
+    return v.build({ name, mergeColors: o.mergeColors ?? true });
   };
 
   const HIP = u(C.hip);
@@ -391,16 +421,47 @@ export function buildHuman(o: HumanOptions): HumanRig {
   body.add(legL, legR);
 
   if (o.number) {
-    const tex = numberTexture(o.number);
+    const tex = numberTexture(o.number, o.anisotropy);
+    /*
+     * EL PLANO SE DIMENSIONA CON LA PROPORCIÓN DE LA TEXTURA.
+     *
+     * Estaba fijo en 6 x 8 celdas (vertical) mientras el lienzo del dorsal sale
+     * `(n * 6 - 1) x 7` píxeles por carácter, es decir mucho más ancho que alto:
+     * con «23» son 66 x 42 (1,57:1) contra 0,75:1 del plano. Los dígitos salían
+     * estirados en vertical y aplastados en horizontal —el «2» parecía una
+     * escalera—, que es el «dorsal incorrecto» que se veía de espaldas.
+     *
+     * Ahora se pide una altura de 5,2 celdas y el ancho sale de la proporción; si
+     * el número tiene muchos dígitos, se limita el ancho a la espalda (8 celdas) y
+     * se recalcula la altura, en vez de deformarlo.
+     */
+    const lienzo = tex.image as HTMLCanvasElement;
+    const relacion = lienzo.width / lienzo.height;
+    const anchoMax = u(6.5);
+    let alto = u(5.2);
+    let ancho = alto * relacion;
+    if (ancho > anchoMax) {
+      ancho = anchoMax;
+      alto = ancho / relacion;
+    }
     const plane = new THREE.Mesh(
-      new THREE.PlaneGeometry(u(6), u(8)),
+      new THREE.PlaneGeometry(ancho, alto),
       new THREE.MeshBasicMaterial({ map: tex, transparent: true }),
     );
-    // La espalda del torso está en z = -TZ celdas; el plano va justo delante
+    /*
+     * El plano se CENTRA en la camiseta y no se coloca a ojo.
+     *
+     * El dorsal colgaba medio bloque por encima del hombro (`u(shortsTop + 3)`),
+     * así que su borde superior asomaba por encima de la tela y el número se leía
+     * descentrado. La camiseta va de `shortsTop - 1` a `torsoTop - 1` celdas, es
+     * decir a la altura media (shortsTop + torsoTop) / 2, y el plano mide 8 celdas
+     * de alto, exactamente la camiseta: centrarlo la cubre entera.
+     */
+    const centroCamiseta = u((C.shortsTop - 1 + C.torsoTop) / 2) - HIP;
+    // La espalda del torso está en z = -TZ celdas; el plano va 3 mm por detrás
     // para no quedar coplanar y provocar z-fighting (§15).
-    plane.position.set(0, u(C.shortsTop + 3), u(-TZ) - 0.0015);
+    plane.position.set(0, centroCamiseta, u(-TZ) - 0.003);
     plane.rotation.y = Math.PI; // mira hacia -Z (la espalda)
-    plane.position.y -= HIP; // cuelga del pivote de inclinación, igual que el torso
     lean.add(plane);
   }
 
@@ -427,6 +488,14 @@ export function animateHuman(
   speed01: number,
   holdingBall: boolean,
   grounded = true,
+  /**
+   * Aviso de aterrizaje: 1 justo al tocar suelo, 0 en reposo (fase B).
+   *
+   * El cuerpo bajaba del salto y se plantaba en seco, como un ascensor. Con esto
+   * el torso se hunde 12 cm, las rodillas se flexionan y vuelve en un cuarto de
+   * segundo. Es opcional para no cambiar ninguna llamada existente.
+   */
+  land = 0,
 ): void {
   const s = Math.min(1, speed01 * 3); // 0 = quieto, 1 = a tope
   const swing = Math.sin(time * 11) * 0.9 * s;
@@ -457,12 +526,23 @@ export function animateHuman(
   // el que empujarse.
   rig.lean.rotation.x = LEAN_RUN * s * (grounded ? 1 : 0.35);
 
-  // Cuerpo: rebote al correr, respiración al estar quieto.
-  rig.body.position.y = Math.abs(Math.sin(time * 11)) * 0.06 * s + Math.sin(time * 1.7) * 0.006 * (1 - s);
+  // Cuerpo: rebote al correr, respiración al estar quieto y hundimiento al caer.
+  rig.body.position.y =
+    Math.abs(Math.sin(time * 11)) * 0.06 * s + Math.sin(time * 1.7) * 0.006 * (1 - s) - land * 0.12;
+  // Rodillas: al aterrizar se flexionan y los brazos se abren para equilibrar.
+  if (land > 0) {
+    rig.legL.rotation.x -= land * 0.5;
+    rig.legR.rotation.x += land * 0.35;
+    rig.armL.rotation.x -= land * 0.4;
+    rig.armR.rotation.x -= land * 0.4;
+  }
   rig.torso.scale.y = 1 + Math.sin(time * 2.2) * 0.012;
 
   // Cabeza: el pivote es el torso, así que un giro leve ya se lee como «mirar».
   rig.torso.rotation.y = Math.sin(time * 0.6) * 0.08 * (1 - s);
+  // `poseShoot`/`poseCelebrate` escriben la inclinación del torso y nadie la
+  // devolvía a 0: tras el primer tiro el torso se quedaba torcido para siempre.
+  rig.torso.rotation.x = 0;
 
   // En el aire las piernas se recogen: sin esto el salto parece un ascensor.
   if (!grounded) {

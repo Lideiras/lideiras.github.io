@@ -12,6 +12,73 @@ export function mat(color: number): THREE.MeshStandardMaterial {
   return m;
 }
 
+/**
+ * MATERIAL ÚNICO DE TODO EL VOXEL DEL MUNDO.
+ *
+ * El color de cada bloque va en el atributo `color` de la geometría (vertex
+ * colors), así que el material no necesita saber nada del modelo. Antes cada
+ * malla por color creaba SU PROPIO `MeshStandardMaterial` con exactamente los
+ * mismos parámetros: 185 `MeshStandardMaterial` clonados en la escena, con el
+ * mismo shader y el mismo estado de render, uno por malla. Compartir uno solo no
+ * cambia un píxel (los parámetros eran idénticos) y deja los materiales únicos
+ * de la escena en 18 (los 8 `MeshBasicMaterial` de anillos y rótulos siguen
+ * aparte, que esos sí son distintos).
+ *
+ * Los únicos que NO lo usan son los que sí se diferencian: el público
+ * (`flatShading` + `instanceColor`), los anillos de zona (`MeshBasicMaterial`,
+ * sin iluminación) y los materiales con textura (suelo de líneas, plató).
+ */
+export const VOXEL_MATERIAL = new THREE.MeshStandardMaterial({
+  vertexColors: true,
+  roughness: 0.92,
+  metalness: 0,
+  // Sin flatShading: usamos las normales por cara que ya calculamos, y el
+  // degradado de AO se interpola limpiamente. Con flatShading Three.js
+  // recalcula la normal con derivadas de pantalla y el resultado es
+  // irregular en caras grandes.
+  flatShading: false,
+  /*
+   * FrontSide (antes DoubleSide).
+   *
+   * DoubleSide era una red de seguridad —«que ninguna figura se lea como una
+   * reja»—, pero se paga a precio de rasterizador: TODAS las caras traseras se
+   * rasterizan. Medido con `renderer.render` + `gl.readPixels(1 px)` (que fuerza
+   * el flush, y por eso mide el rasterizado de verdad, no el envío de comandos):
+   *
+   *   · DoubleSide ... 33,2 ms por fotograma
+   *   · FrontSide .... 17,6 ms por fotograma   (−47 %)
+   *
+   * Y no cambia lo que se ve: en las siete vistas, medido con `readPixels` del
+   * fotograma completo a 640 × 360, la diferencia es de 0-10 píxeles por vista
+   * (1,6 M de muestras) con deltas de 4-14 niveles, y todos en bordes de
+   * silueta. La causa es que el voxelizador emite cada cara con la normal
+   * geométrica hacia fuera (comprobado cara por cara al construir), así que la
+   * cara trasera nunca aporta el píxel más cercano salvo en el muestreo de un
+   * borde con MSAA.
+   *
+   * Con esto el fotograma cabe en un presupuesto de 60 fps en un rasterizador
+   * por software (el panel), que es donde se notaba el stutter al moverse.
+   */
+  side: THREE.FrontSide,
+});
+
+/**
+ * Apaga las sombras PROYECTADAS de un grupo entero.
+ *
+ * `receiveShadow` se deja intacto: el grupo sigue recibiendo sombras de los
+ * demás, que es lo que se ve. Se usa en lo que el mapa de sombras no aporta
+ * nada visible (medido: 0 píxeles de diferencia con la sonda de dev en las
+ * cámaras de juego y de las seis secciones) y sí cuesta triángulos en cada
+ * horneado del mapa de sombras: vegetación, torres de luz y muro del plató.
+ */
+export function noCastShadow<T extends THREE.Object3D>(group: T): T {
+  group.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (m.isMesh) m.castShadow = false;
+  });
+  return group;
+}
+
 export function box(w: number, h: number, d: number, color: number): THREE.Mesh {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(color));
   m.castShadow = true;
@@ -30,7 +97,21 @@ export function cylBetween(a: THREE.Vector3, b: THREE.Vector3, radius: number, c
   return m;
 }
 
-export function canvasTexture(w: number, h: number, draw: (g: CanvasRenderingContext2D) => void): THREE.CanvasTexture {
+export function canvasTexture(
+  w: number,
+  h: number,
+  draw: (g: CanvasRenderingContext2D) => void,
+  /**
+   * `mipmaps` para texturas que se ven PEQUEÑAS en pantalla (el dorsal del
+   * jugador, que mide 0,3 m y se mira desde 16 m).
+   *
+   * Sin mipmaps y con `NearestFilter`, una textura muy reducida muestrea un
+   * píxel de cada N y los dígitos se ven rotos, a saltos, como manchas sueltas;
+   * es lo que hacía que el dorsal «se viera incorrecto». Con mipmaps se sigue
+   * viendo nítido de cerca (el `magFilter` no cambia) y legible de lejos.
+   */
+  opts?: { mipmaps?: boolean; anisotropy?: number },
+): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = w;
   c.height = h;
@@ -41,8 +122,14 @@ export function canvasTexture(w: number, h: number, draw: (g: CanvasRenderingCon
   tex.colorSpace = THREE.SRGBColorSpace;
   // Sin suavizado: es una textura pixel-art y debe leerse como bloques, no como degradado.
   tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestFilter;
-  tex.generateMipmaps = false;
+  if (opts?.mipmaps) {
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.generateMipmaps = true;
+    if (opts.anisotropy) tex.anisotropy = opts.anisotropy;
+  } else {
+    tex.minFilter = THREE.NearestFilter;
+    tex.generateMipmaps = false;
+  }
   return tex;
 }
 
@@ -291,12 +378,37 @@ export class VoxelWorld {
    * Sin esto, un bloque de 6.25 cm apoyado en el parquet se ve como una valla
    * desde la cámara rasante en lugar de como una línea pintada.
    */
-  build(opts: { shadows?: boolean; name?: string; flatTop?: boolean; flatY?: number } = {}): THREE.Group {
+  build(opts: {
+    shadows?: boolean;
+    /** Sólo afecta a la sombra que PROYECTA; `receiveShadow` sigue en `shadows`. */
+    castShadow?: boolean;
+    name?: string;
+    flatTop?: boolean;
+    flatY?: number;
+    /**
+     * UNA sola malla para todos los colores, en vez de una por tonalidad.
+     *
+     * El constructor emite una malla por color, y eso es lo correcto para el
+     * mundo estático: cada malla es un draw call, pero el fundido del arranque
+     * (`batch.ts`) las vuelve a juntar por material y estado de render, así que
+     * la granularidad por color no cuesta nada.
+     *
+     * NO es el caso de lo que se MUEVE y por tanto no se funde: cada pieza de
+     * un personaje (`part()` en `human.ts`) sale con 4-6 mallas, una por tono, y
+     * el rig del jugador entero se queda en ~30 llamadas de dibujo por
+     * fotograma. Fundir los colores en una sola geometría con color por vértice
+     * —el material ya es `vertexColors`— deja el rig en 8-9 llamadas y no cambia
+     * un píxel: son caras opacas, sin transparencia, así que el orden entre
+     * mallas no influye en el resultado.
+     */
+    mergeColors?: boolean;
+  } = {}): THREE.Group {
     const s = this.size;
     const group = new THREE.Group();
     group.name = opts.name ?? 'voxels';
     const flat = opts.flatTop ?? false;
     const flatY = opts.flatY ?? 0;
+    const merge = opts.mergeColors ?? false;
 
     // Agrupa celdas por color para poder crear una malla por tonalidad.
     const byColor = new Map<number, number[]>();
@@ -305,6 +417,10 @@ export class VoxelWorld {
       if (!list) byColor.set(color, (list = []));
       list.push(...k.split('|').map(Number));
     }
+
+    // Acumuladores compartidos cuando se funden los colores. Se declaran aquí
+    // fuera para que el bucle de colores siga siendo el mismo en los dos casos.
+    const merged = merge ? { pos: [] as number[], nor: [] as number[], col: [] as number[], tri: [] as number[] } : null;
 
     for (const [color, coords] of byColor) {
       const pos: number[] = [];
@@ -378,30 +494,38 @@ export class VoxelWorld {
       }
 
       if (!pos.length) continue;
+      if (merged) {
+        // Un solo buffer: se copia la geometría de este color y se desplazan sus
+        // índices por los vértices que ya había. El color ya va por vértice.
+        const base = merged.pos.length / 3;
+        merged.pos.push(...pos);
+        merged.nor.push(...nor);
+        merged.col.push(...col);
+        for (const i of tri) merged.tri.push(i + base);
+        continue;
+      }
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
       geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
       geo.setIndex(tri);
-      const mtl = new THREE.MeshStandardMaterial({
-        vertexColors: true,
-        roughness: 0.92,
-        metalness: 0,
-        // Sin flatShading: usamos las normales por cara que ya calculamos, y el
-        // degradado de AO se interpola limpiamente. Con flatShading Three.js
-        // recalcula la normal con derivadas de pantalla y el resultado es
-        // irregular en caras grandes.
-        flatShading: false,
-        // DoubleSide: garantía de que ninguna figura se vea hueca. El culling de
-        // caras internas ya se hace al construir la malla, así que no emitimos
-        // caras de sobra; con FrontSide, cualquier cara mal orientada se come y
-        // el modelo se lee como una reja por la que se ve el fondo. El sobrecoste
-        // es rasterizar la cara trasera, que el depth test descarta enseguida.
-        side: THREE.DoubleSide,
-      });
-      const mesh = new THREE.Mesh(geo, mtl);
-      mesh.castShadow = opts.shadows ?? true;
+      const mesh = new THREE.Mesh(geo, VOXEL_MATERIAL);
+      mesh.castShadow = opts.castShadow ?? opts.shadows ?? true;
       mesh.receiveShadow = opts.shadows ?? true;
+      group.add(mesh);
+    }
+
+    if (merged && merged.pos.length) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(merged.pos, 3));
+      geo.setAttribute('normal', new THREE.Float32BufferAttribute(merged.nor, 3));
+      geo.setAttribute('color', new THREE.Float32BufferAttribute(merged.col, 3));
+      geo.setIndex(merged.tri);
+      geo.computeBoundingSphere();
+      const mesh = new THREE.Mesh(geo, VOXEL_MATERIAL);
+      mesh.castShadow = opts.castShadow ?? opts.shadows ?? true;
+      mesh.receiveShadow = opts.shadows ?? true;
+      mesh.name = (opts.name ?? 'voxels') + ':merged';
       group.add(mesh);
     }
 

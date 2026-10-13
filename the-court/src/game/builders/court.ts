@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { COURT } from '../config';
-import { CROWD_COLORS, canvasTexture, mulberry32, voxelGroup } from './util';
+import { CROWD_COLORS, VOXEL, canvasTexture, drawPixelText, mulberry32, noCastShadow, pixelTextWidth, voxelGroup } from './util';
 
 const PPM = 80; // píxeles de textura por metro
 
@@ -224,18 +224,50 @@ function buildStands(): THREE.Group {
       // Remate claro en el borde interior: marca el canto del peldaño.
       v.span(-ex, y - 0.12, -oz - 0.25, ex, y, -oz, 0xdfe9f7);
       v.span(-ex, y - 0.12, oz, ex, y, oz + 0.25, 0xdfe9f7);
+
+      /*
+       * PASILLO DE ESCALERAS (fase A).
+       *
+       * Cada peldaño lleva un tramo de color distinto en dos puntos de los lados
+       * largos: es lo que lee como la escalera de acceso a la grada, y de paso
+       * rompe la simetría del anillo. Se pinta la HUELLA (la cara de arriba), así
+       * que no añade volumen.
+       */
+      for (const ax of [-7.4, 7.4]) {
+        v.span(ax - 1.1, y - 0.02, -oz - TREAD, ax + 1.1, y, -oz, 0xe8845c);
+        v.span(ax - 1.1, y - 0.02, oz, ax + 1.1, y, oz + TREAD, 0xe8845c);
+      }
     }
+    /*
+     * EL GRANO DEL GRADERÍO SE QUEDA EN 25 cm, y es una decisión medida.
+     *
+     * La barandilla y los banderines (más abajo, en su propio grupo) piden 12 cm
+     * para leerse, y el primer intento fue bajar el grano de TODO el graderío a
+     * 12,5 cm: al duplicar la resolución, cada losa de peldaño pasa de 2 a 4
+     * celdas por lado y el graderío se fue de 189.656 a 505.416 triángulos —el
+     * 60 % de todo el mundo, para las cuatro barras de una barandilla—. Con el
+     * detalle en su propio `VoxelWorld` su barandilla cuesta 13.000 triángulos y
+     * el graderío conserva su grano grueso, que es el que le va bien a una losa
+     * de 30 m de largo.
+     */
   }, 0.25);
+
+  const rail = buildStandsRail(R0X, R0Z);
+  g.add(rail);
 
   // Asientos: se recorre el anillo peldaño a peldaño. Una sola lista alimenta
   // las cuatro mallas instanciadas del público.
   const SPACING = 0.95; // las figuras miden 1,1 m: 0,7 las solapaba
   const seats: Array<[number, number, number]> = [];
+  // Los pasillos de escalera se quedan sin butaca: si la escalera está pintada y
+  // encima hay público sentado, la escalera no se ve.
+  const enPasillo = (x: number): boolean => Math.abs(Math.abs(x) - 7.4) < 1.25;
   for (let i = 0; i < TIERS; i++) {
     const y = RISE * (i + 1) + 0.12;
     const ox = R0X + i * TREAD + TREAD / 2;
     const oz = R0Z + i * TREAD + TREAD / 2;
     for (let x = -ox; x <= ox; x += SPACING) {
+      if (enPasillo(x)) continue;
       seats.push([x, y, -oz], [x, y, oz]);
     }
     for (let z = -oz + SPACING; z <= oz - SPACING; z += SPACING) {
@@ -243,7 +275,10 @@ function buildStands(): THREE.Group {
     }
   }
 
-  g.add(buildCrowd(seats));
+  const crowd = buildCrowd(seats);
+  g.userData.crowdTime = crowd.userData.crowdTime;
+  g.userData.crowdFx = crowd.userData.crowdFx;
+  g.add(crowd);
   return g;
 }
 
@@ -276,8 +311,59 @@ function buildCrowd(seats: Array<[number, number, number]>): THREE.Group {
   const e = new THREE.Euler();
   const p = new THREE.Vector3();
   const sc = new THREE.Vector3();
-  const mat = (): THREE.MeshStandardMaterial =>
-    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, flatShading: true });
+
+  /*
+   * Público VIVO, y sin tocar una sola matriz en CPU.
+   *
+   * Mil asientos estáticos se leen como una foto. Moverlos desde JavaScript
+   * serían 4.900 matrices por fotograma (componer, subir el buffer entero):
+   * medio milisegundo de CPU para un balanceo de dos centímetros. En vez de eso
+   * el desplazamiento se hace en el vértice: cada instancia saca su FASE de su
+   * propia traslación (`instanceMatrix[3]`, la columna de posición), que es
+   * distinta para cada asiento y constante en el tiempo, y con ella se suma un
+   * seno de 4,5 cm a la altura. Las cinco piezas de una misma persona comparten
+   * traslación, así que cabeza, pelo, torso, brazos y muslos suben y bajan
+   * juntos: no se desmonta nadie.
+   *
+   * El uniforme es único y lo comparten los cinco materiales; `main.ts` lo
+   * avanza con el reloj de la escena (y se queda en 0 con `prefers-reduced-motion`).
+   */
+  const uCrowdTime = { value: 0 };
+  /*
+   * OLA DE CELEBRACIÓN (fase B).
+   *
+   * Al anotar, la grada entera se levanta: un frente de onda que sale del centro
+   * de la pista y recorre el anillo (el radio de cada asiento sale de su propia
+   * traslación, que ya la tiene). Cuesta dos uniformes compartidos por los cinco
+   * materiales —los mismos que el balanceo— y cero matrices de CPU.
+   */
+  const uCrowdWave = { value: 0 };
+  const uCrowdJump = { value: 0 };
+  const mat = (): THREE.MeshStandardMaterial => {
+    const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, flatShading: true });
+    m.onBeforeCompile = (shader) => {
+      shader.uniforms.uCrowdTime = uCrowdTime;
+      shader.uniforms.uCrowdWave = uCrowdWave;
+      shader.uniforms.uCrowdJump = uCrowdJump;
+      shader.vertexShader = `uniform float uCrowdTime;\nuniform float uCrowdWave;\nuniform float uCrowdJump;\n${shader.vertexShader}`.replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+        {
+          // Longitud de onda larga (~25 m): la grada se mece en olas que la
+          // recorren, no en un temblor por asiento. 4,5 cm de amplitud es lo que
+          // hace falta para que se note a 30 m; con 1,8 cm el movimiento se
+          // quedaba por debajo del píxel.
+          float fase = instanceMatrix[3].x * 0.22 + instanceMatrix[3].z * 0.31;
+          transformed.y += sin(uCrowdTime * 0.9 + fase) * 0.045;
+          // Celebración: un frente de onda que sale del centro de la pista.
+          float radio = length(instanceMatrix[3].xz);
+          float ola = max(0.0, 1.0 - abs(uCrowdWave - radio * 0.14));
+          transformed.y += ola * uCrowdJump * 0.3;
+        }`,
+      );
+    };
+    return m;
+  };
 
   /*
    * Escala. Un espectador SENTADO mide ~1,1 m, que es el 60 % del jugador
@@ -370,9 +456,287 @@ function buildCrowd(seats: Array<[number, number, number]>): THREE.Group {
   for (const im of [legs, bodies, arms, heads, hairs]) {
     im.instanceMatrix.needsUpdate = true;
     if (im.instanceColor) im.instanceColor.needsUpdate = true;
+    // El público PROYECTA: con el foco clave inclinado 24°, cada espectador
+    // echa su sombra sobre la fila de delante, y eso es lo que da profundidad al
+    // graderío en las seis secciones. `castShadow` viene en `false` por defecto
+    // en cualquier `Mesh`, así que hay que activarlo a mano (en el código
+    // original nunca se activó: el público no proyectaba).
+    // Coste: los 5 instanciados entran en el horneado del mapa de sombras, que
+    // es ÚNICO, no en cada fotograma.
+    im.castShadow = true;
     g.add(im);
   }
+  // Los uniformes viajan con el grupo: `buildCourt` los sube al suyo y `main.ts`
+  // los avanza desde el bucle, sin conocer la jerarquía interna del graderío.
+  g.userData.crowdTime = uCrowdTime;
+  g.userData.crowdFx = { wave: uCrowdWave, jump: uCrowdJump };
   return g;
+}
+
+/* ===========================================================================
+ * MARCADOR COLGADO DEL TECHO
+ * ---------------------------------------------------------------------------
+ * Un pabellón sin marcador no es un pabellón: es una pista con gente. Éste cuelga
+ * del techo sobre el centro de la cancha, con las cuatro caras mirando a las
+ * gradas, y lleva el RÉCORD EN VIVO (anotados / intentados) en lugar de un texto
+ * fijo, que habría que traducir.
+ *
+ * Coste: la estructura entra en el fundido del arranque (0 llamadas) y sólo las
+ * dos pantallas —una cara y la opuesta, que comparten material— son llamadas
+ * nuevas, y sólo en la vista de juego: en las seis secciones el marcador queda
+ * fuera de cuadro (la cámara mira a 2 m de altura y el marcador está a 8,6).
+ *
+ * La pantalla se redibuja SÓLO cuando cambia el marcador (al tirar), no por
+ * fotograma: `setScore()` pinta el lienzo y sube la textura a la GPU una vez.
+ * ========================================================================= */
+
+/** Lienzo del marcador: 4,2 x 1,1 m a 80 px/m. */
+const SCORE_W = 336;
+const SCORE_H = 88;
+
+function paintScore(g: CanvasRenderingContext2D, made: number, attempted: number): void {
+  g.fillStyle = '#080d18';
+  g.fillRect(0, 0, SCORE_W, SCORE_H);
+  // Marco interior: un bisel de dos tonos, como los marcadores de verdad.
+  g.fillStyle = '#1f2937';
+  g.fillRect(0, 0, SCORE_W, 6);
+  g.fillRect(0, SCORE_H - 6, SCORE_W, 6);
+  g.fillRect(0, 0, 6, SCORE_H);
+  g.fillRect(SCORE_W - 6, 0, 6, SCORE_H);
+
+  const txt = `${made}/${attempted}`;
+  const px = 9;
+  const w = pixelTextWidth(txt, px);
+  const x = Math.round((SCORE_W - w) / 2);
+  const y = Math.round((SCORE_H - 7 * px) / 2) + 1;
+  // Sombra desplazada una fila: en un LED se lee como el fondo apagado.
+  drawPixelText(g, txt, x, y + 1, px, '#5b1d12');
+  drawPixelText(g, txt, x, y, px, '#ff7a1a');
+}
+
+export interface Scoreboard extends THREE.Group {
+  /** Repinta la pantalla con el récord en vivo. */
+  setScore(made: number, attempted: number): void;
+}
+
+export function buildScoreboard(): Scoreboard {
+  const group = new THREE.Group();
+  group.name = 'scoreboard';
+  /*
+   * ALTURA: 5,7 m, y no los 8,6 del primer intento.
+   *
+   * La cámara de juego mira hacia abajo unos 50° con un campo vertical de 32°, así
+   * que su borde superior está 34° por debajo de la horizontal: lo que esté más
+   * alto que eso NO ENTRA EN CUADRO por mucho que esté delante. A 8,6 m el
+   * marcador quedaba fuera (medido: no aparecía en ninguna captura de juego); a
+   * 5,7 entra por el borde alto del encuadre y se lee sin estorbar, porque queda
+   * por encima del aro (3,05 m) y muy por encima del jugador.
+   *
+   * Los cables suben hasta las cerchas (14,2 m): largos, pero es donde se cuelga
+   * un marcador de pabellón.
+   */
+  const y = 5.7;
+  const W = SCORE_W / PPM / 2; // 2,1 m de semiancho
+  const H = SCORE_H / PPM / 2;
+
+  // ── Estructura: caja con biseles y cables hasta el techo.
+  group.add(
+    voxelGroup('scoreboardBody', (v) => {
+      v.span(-W - 0.14, y - H - 0.14, -0.36, W + 0.14, y + H + 0.14, 0.36, 0x2b3550);
+      v.span(-W - 0.2, y + H + 0.14, -0.42, W + 0.2, y + H + 0.3, 0.42, 0x8e9cb4);
+      v.span(-W - 0.2, y - H - 0.3, -0.42, W + 0.2, y - H - 0.14, 0.42, 0x8e9cb4);
+      // Cuatro cables a las cerchas del techo.
+      for (const sx of [-1, 1]) {
+        for (const sz of [-1, 1]) {
+          v.span(sx * (W - 0.2) - 0.03, y + H + 0.3, sz * 0.24 - 0.03, sx * (W - 0.2) + 0.03, 14.2, sz * 0.24 + 0.03, 0x1f2937);
+        }
+      }
+      // Grano GRUESO (12,5 cm): es una caja lisa de 4,5 x 2,4 m vista desde 16 m.
+      // A 3 cm costaba 18.000 triángulos de superficie que no se distinguen.
+    }, VOXEL * 4),
+  );
+
+  const canvas = document.createElement('canvas');
+  canvas.width = SCORE_W;
+  canvas.height = SCORE_H;
+  const g = canvas.getContext('2d');
+  if (g) paintScore(g, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.generateMipmaps = true;
+  // MeshBasicMaterial: un marcador es una fuente de luz, no una superficie
+  // pintada. Además se lee igual con la luz que caiga, que es lo que se quiere.
+  const mat = new THREE.MeshBasicMaterial({ map: tex, toneMapped: false });
+  /*
+   * LAS PANTALLAS VAN INCLINADAS 25° HACIA ABAJO, y no es un capricho estético.
+   *
+   * La cámara de juego está 11 m por encima del marcador: con la pantalla vertical
+   * se ve de canto, en escorzo, y los dígitos se leen como una raya. Inclinadas
+   * miran al suelo de la pista, que es donde está el público de la grada y donde
+   * está la cámara. Los marcadores de pabellón de verdad son así.
+   *
+   * El orden de Euler es YXZ a propósito: primero el giro de 180° (para que la
+   * cara de atrás mire hacia -Z) y después la inclinación, que así cae en el eje
+   * correcto en las dos caras.
+   */
+  const TILT = 0.44; // ~25°
+  for (const sz of [-1, 1]) {
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(W * 2, H * 2), mat);
+    face.position.set(0, y, sz * 0.37);
+    face.rotation.set(TILT, sz < 0 ? Math.PI : 0, 0, 'YXZ');
+    face.name = `scoreboardFace${sz > 0 ? 'F' : 'B'}`;
+    group.add(face);
+  }
+
+  const setScore = (made: number, attempted: number): void => {
+    if (!g) return;
+    paintScore(g, made, attempted);
+    tex.needsUpdate = true;
+  };
+  // El método va en el propio grupo (no en `userData`) para que `main.ts` lo
+  // llame tipado: `board.setScore(...)`.
+  const board = group as Scoreboard;
+  board.setScore = setScore;
+  return board;
+}
+
+/**
+ * TECHO DEL PABELLÓN: cerchas, focos colgantes y altavoces.
+ *
+ * Sin nada arriba, el fondo del encuadre es un azul vacío y la pista vuelve a
+ * leerse como una isla flotante, que es justo lo que se corrigió con el terreno
+ * alrededor. Aquí se cierra el espacio con la estructura MÍNIMA que se ve desde
+ * la cámara de juego (que mira hacia abajo desde 12,4 m): tres celosías
+ * cruzadas, sus correas, seis focos colgantes y altavoces.
+ *
+ * DOS PRECAUCIONES, las dos medidas y no supuestas:
+ *
+ *  · **No proyecta sombra** (`noCastShadow`). El mapa de sombras se hornea UNA
+ *    vez con el foco clave en (10, 34, 12) y su frustum cubre todo el recinto: un
+ *    techo que proyectara taparía la pista entera y el juego se vería a oscuras
+ *    (y el horneado pasaría de 9 llamadas a dibujar toda la cubierta).
+ *  · **No hay losa de cubierta.** Se probó con una y el techo, al estar iluminado
+ *    desde arriba, se veía como una plancha clara comiéndose el encuadre; las
+ *    cerchas dan la lectura de «bajo techo» sin tapar el cielo del panel.
+ */
+function buildCeiling(): THREE.Group {
+  return noCastShadow(voxelGroup('ceiling', (v) => {
+    const X = COURT.halfL + 8; // 22 m: cubre pista y gradas
+    /*
+     * LA CUBIERTA NO PASA POR ENCIMA DE LA CÁMARA, y esto es lo único delicado de
+     * toda la pieza.
+     *
+     * La cámara de juego está en `CAMERA.offset` multiplicado por `dist`: en
+     * apaisado a 12,4 m de alto y en vertical hasta 17,2 m (y hasta 29,8 m en un
+     * móvil, donde `dist` llega a 2,4). El primer intento cubrió el pabellón
+     * entero con las cerchas a 14,2 m y, en cuanto la cámara subió por el formato
+     * de la pantalla, se metió DEBAJO de la estructura y las cerchas taparon la
+     * pista entera: la captura era un muro azul.
+     *
+     * Por eso la cubierta cubre sólo la MITAD LEJANA (z ≤ +4). La cámara está
+     * siempre en z ≥ 6,2 y mira hacia -Z, así que ve el canto de la cubierta en la
+     * parte alta del encuadre —exactamente como un plano de retransmisión desde la
+     * grada, con la estructura del techo asomando por arriba— y nunca puede
+     * quedar por debajo de ella.
+     */
+    const Z_NEAR = 4; // borde de la cubierta por el lado de la cámara
+    const Z_FAR = -(COURT.halfW + 7);
+    const Y = 14.2;
+    // Cerchas maestras: celosía de canto y cordón inferior.
+    for (const z of [Z_FAR + 0.6, -4, 0, Z_NEAR - 0.2]) {
+      v.span(-X, Y, z - 0.18, X, Y + 0.36, z + 0.18, 0x4a5a80);
+      v.span(-X, Y + 1.5, z - 0.18, X, Y + 1.86, z + 0.18, 0x4a5a80);
+      for (let x = -X; x <= X; x += 1.6) {
+        v.span(x - 0.1, Y + 0.36, z - 0.1, x + 0.1, Y + 1.5, z + 0.1, 0x5d6f96);
+      }
+    }
+    // Correas transversales: cierran la retícula vista en escorzo.
+    for (let x = -X; x <= X; x += 3.2) {
+      v.span(x - 0.12, Y + 1.86, Z_FAR + 0.6, x + 0.12, Y + 2.1, Z_NEAR - 0.2, 0x4a5a80);
+    }
+    // Focos colgantes: péndulo, visera y cara emisiva. Van alineados con la
+    // pista, que es donde se mira.
+    for (const x of [-9.6, -3.2, 3.2, 9.6]) {
+      for (const z of [-8.5, -2.5, 2.5]) {
+        v.span(x - 0.05, Y - 1.6, z - 0.05, x + 0.05, Y, z + 0.05, 0x2b3550);
+        v.span(x - 0.62, Y - 2.1, z - 0.44, x + 0.62, Y - 1.6, z + 0.44, 0x5d6f96);
+        v.span(x - 0.5, Y - 2.18, z - 0.34, x + 0.5, Y - 2.1, z + 0.34, 0xfff3c4);
+      }
+    }
+    // Altavoces: dos parejas de megafonía colgadas de las cerchas, en los dos
+    // extremos que cubre la cubierta.
+    for (const sz of [-1, 1]) {
+      const z = sz < 0 ? -9.5 : 2.5;
+      v.span(-6.5, Y - 2.4, z - 0.5, -5.1, Y - 1.4, z + 0.5, 0x1f2937);
+      v.span(-6.4, Y - 2.3, z - 0.4, -5.2, Y - 1.5, z + 0.4, 0x3a465e);
+    }
+  }, 0.25));
+}
+
+/**
+ * BARANDILLA PERIMÉTRICA Y BANDERINES DEL GRADERÍO (fase A).
+ *
+ * La barandilla es la pieza que convierte el anillo de peldaños en una grada de
+ * pabellón: va delante de la primera fila, a la altura del pecho de un
+ * espectador sentado (1,1 m), con montantes cada 2,5 m y dos barras.
+ *
+ * De ella cuelgan banderines: triángulos de cuatro bloques en los colores del
+ * graderío. Es el detalle más barato que existe para dar «fiesta» a una grada, y
+ * Trove es colorido y alegre por definición.
+ *
+ * Va en su PROPIO `VoxelWorld` a 12,5 cm (ver el comentario del grano en
+ * `buildStands`): el graderío se queda a 25 cm y la barandilla tiene el detalle
+ * que necesita. Las dos piezas comparten el material voxel, así que el fundido
+ * del arranque las mete en los mismos lotes: sigue costando 0 llamadas.
+ */
+function buildStandsRail(R0X: number, R0Z: number): THREE.Group {
+  return voxelGroup('standsRail', (v) => {
+    const RAIL_Y = 1.1;
+    const FLAG = [0xff8c3a, 0xf6d54a, 0x4fa8f0, 0x7ee08a, 0xfdfdf6] as const;
+    let flagN = 0;
+    const banderin = (x: number, z: number, dir: number): void => {
+      // Mástil corto hacia abajo + triángulo de tres bloques decrecientes.
+      v.span(x - 0.05, RAIL_Y - 0.5, z - 0.05, x + 0.05, RAIL_Y, z + 0.05, 0x2b3550);
+      const c = FLAG[flagN++ % FLAG.length]!;
+      for (let i = 0; i < 3; i++) {
+        v.span(x - 0.05, RAIL_Y - 0.18 - i * 0.12, z - 0.05, x + 0.05, RAIL_Y - 0.06 - i * 0.12, z + 0.05 + dir * (0.34 - i * 0.1), c);
+      }
+    };
+    const tramo = (x0: number, z0: number, x1: number, z1: number): void => {
+      const dx = x1 - x0;
+      const dz = z1 - z0;
+      const len = Math.hypot(dx, dz);
+      const n = Math.max(2, Math.round(len / 2.5));
+      for (let i = 0; i <= n; i++) {
+        const t = i / n;
+        const x = x0 + dx * t;
+        const z = z0 + dz * t;
+        v.span(x - 0.07, 0.6, z - 0.07, x + 0.07, RAIL_Y, z + 0.07, 0x8e9cb4);
+      }
+      // Dos barras horizontales: la de arriba gruesa y una intermedia fina.
+      const step = 0.35;
+      for (let i = 0; i * step <= len; i++) {
+        const x = x0 + (dx / len) * i * step;
+        const z = z0 + (dz / len) * i * step;
+        v.span(x - 0.06, RAIL_Y - 0.12, z - 0.06, x + 0.06, RAIL_Y, z + 0.06, 0xdfe9f7);
+        v.span(x - 0.05, RAIL_Y - 0.42, z - 0.05, x + 0.05, RAIL_Y - 0.32, z + 0.05, 0x8e9cb4);
+      }
+      // Banderines cada 2,4 m, colgando hacia el lado de la pista.
+      const cada = 2.4;
+      const signo = Math.abs(dz) > 0.1 ? -Math.sign(dz) : 0;
+      for (let i = 0; i * cada <= len; i++) {
+        const x = x0 + (dx / len) * i * cada;
+        const z = z0 + (dz / len) * i * cada;
+        banderin(x, z, signo);
+      }
+    };
+    tramo(-R0X, -R0Z, R0X, -R0Z);
+    tramo(-R0X, R0Z, R0X, R0Z);
+    tramo(-R0X, -R0Z, -R0X, R0Z);
+    tramo(R0X, -R0Z, R0X, R0Z);
+  }, 0.125);
 }
 
 /**
@@ -410,7 +774,13 @@ function buildBoards(): THREE.Group {
 function buildLightTowers(): THREE.Group {
   const X = COURT.halfL + 7;
   const Z = COURT.halfW + 7;
-  return voxelGroup('lightTowers', (v) => {
+  // Las torres son el propio soporte de los focos y están por encima de todo lo
+  // demás: incluso con la luz sesgada, su sombra cae sobre su propia zapata, que
+  // la tapa. Además, al ser un grupo voxel con las cuatro torres juntas, su
+  // esfera envolvente cubre todo el recinto y ninguna cámara de sombras puede
+  // descartarlo por frustum: se dibujaría en todos los horneados desde cualquier
+  // vista, para nada.
+  return noCastShadow(voxelGroup('lightTowers', (v) => {
     for (const sx of [-1, 1]) {
       for (const sz of [-1, 1]) {
         const x = sx * X;
@@ -440,7 +810,7 @@ function buildLightTowers(): THREE.Group {
         }
       }
     }
-  }, 0.25);
+  }, 0.25));
 }
 
 /**
@@ -490,7 +860,9 @@ function buildScatter(): THREE.Group {
       }
     }
   }, 0.25);
-  return g;
+  // Vegetación y rocas del exterior del recinto (a partir de r = 24 m): su
+  // sombra cae al lado del árbol, fuera de la pista y fuera del encuadre.
+  return noCastShadow(g);
 }
 
 /**
@@ -573,22 +945,29 @@ export function buildCourt(brand: string, maxAnisotropy: number): THREE.Group {
   const t3 = performance.now();
   const scatter = buildScatter();
   const t4 = performance.now();
+  const ceiling = buildCeiling();
+  const t5 = performance.now();
   console.info(
     `[court] tiempos ms -> stands ${(t1 - t0) | 0}, boards ${(t2 - t1) | 0}, ` +
-    `torres ${(t3 - t2) | 0}, vegetacion ${(t4 - t3) | 0}`,
+    `torres ${(t3 - t2) | 0}, vegetacion ${(t4 - t3) | 0}, techo ${(t5 - t4) | 0}`,
   );
-  group.add(around, floor, stands, boards, towers, scatter);
+  group.add(around, floor, stands, boards, towers, scatter, ceiling);
+  // El uniforme del balanceo del público nace dentro del graderío; se sube al
+  // grupo que devuelve `buildCourt` porque quien lo avanza (`main.ts`) recibe
+  // ese grupo y no tiene por qué saber cómo está montado por dentro.
+  group.userData.crowdTime = stands.userData.crowdTime;
+  group.userData.crowdFx = stands.userData.crowdFx;
   return group;
 }
 
 /**
- * Capa de líneas suelta, para poner ENCIMA del suelo del glTF.
+ * Capa de marcaje y pintura, 4 mm POR ENCIMA del parqué.
  *
- * El modelo descargado trae el suelo en dos tonos planos y sin marcaje:
- * leyendo su textura-paleta, esa malla sólo referencia dos colores (#aaaaaa y
- * #ffd0b1). Sin esta capa la pista no se lee como una cancha de baloncesto.
- * Va con `depthWrite: false` porque es una calcomanía sobre el suelo del
- * modelo, no una superficie que deba tapar nada.
+ * El parqué procedural de `drawFloor` pinta el barniz con sus betas, pero su
+ * pintura y sus líneas quedan tapadas por la propia capa de suelo (se comprobó
+ * muestreando el píxel de la textura). Así que el marcaje va en esta segunda
+ * pasada, una calcomanía con `transparent` y `depthWrite: false` que se apoya
+ * sobre el suelo y deja leer la pista como una cancha de baloncesto.
  */
 export function buildCourtLines(brand: string, maxAnisotropy: number): THREE.Mesh {
   const W = COURT.length * PPM;

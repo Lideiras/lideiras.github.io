@@ -5,16 +5,17 @@ import { Hud } from '../ui/hud';
 import { PanelManager, sectionKey, signKey, statsSource } from '../ui/panels';
 import { Sfx } from './audio';
 import { Ball } from './ball';
-import { buildCourt, buildCourtLines } from './builders/court';
+import { buildCourt, buildCourtLines, buildScoreboard } from './builders/court';
 import { animateHuman, buildHuman, poseCelebrate, poseShoot } from './builders/human';
-import { buildBench, buildHoop, buildScorerTable, buildTunnel, buildZoneRing, createBallMesh } from './builders/props';
+import { batchStaticMeshes } from './builders/batch';
+import { NET, buildBench, buildHoop, buildScorerTable, buildTunnel, buildZoneRing, createBallMesh } from './builders/props';
+import { PLAYER_RADIUS, buildColliders, resolveCircle } from './collide';
 import { loadModel, normalize } from './assets';
-import { PALETTE, VoxelWorld } from './builders/util';
-import { voxelizeMesh } from './builders/voxelize';
+import { VOXEL_MATERIAL, canvasTexture, noCastShadow } from './builders/util';
 import { buildInterviewSet } from './builders/tv';
 import {
   BALL, CAMERA,
-  SECTION_CAMERA, COURT, HAND_SWITCH_ANGLE, INTERVIEW, PLAYER, RIM, SECTION_IDS, SHOOT_RANGE,
+  SECTION_CAMERA, HAND_SWITCH_ANGLE, INTERVIEW, PLAYER, RIM, SECTION_IDS, SHOOT_RANGE,
   ZONES, rimX, type Side, type Zone,
 } from './config';
 import { Input } from './input';
@@ -34,7 +35,19 @@ const clamp = (v: number, a: number, b: number): number => Math.min(b, Math.max(
  */
 const wrapPi = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));
 const lerpAngle = (a: number, b: number, k: number): number => a + wrapPi(b - a) * k;
-const nextFrame = (): Promise<void> => new Promise((r) => requestAnimationFrame(() => r()));
+/*
+ * Cede el turno un fotograma, para que el loader pueda pintar entre fases.
+ *
+ * Con la pestaña OCULTA no hay fotogramas (`requestAnimationFrame` se para), y
+ * la carga se quedaba esperando uno para siempre: si alguien abre el juego en
+ * una pestaña de fondo, no termina de cargar hasta que la mira. En ese caso se
+ * cede con temporizador: el fotograma no se va a pintar igualmente, pero la
+ * carga avanza y el juego está listo al cambiar de pestaña.
+ */
+const nextFrame = (): Promise<void> =>
+  document.hidden
+    ? new Promise((r) => setTimeout(r, 0))
+    : new Promise((r) => requestAnimationFrame(() => r()));
 
 function loadSet(key: string): Set<SectionId> {
   try {
@@ -102,6 +115,39 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
   renderer.setPixelRatio(pixelRatio);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  /*
+   * MAPA DE SOMBRAS ESTÁTICO.
+   *
+   * Medido en la GPU del panel (Intel HD 4600, ANGLE/D3D11) con un contador a
+   * nivel de WebGL, no con `renderer.info`: `info` NO cuenta el pase de sombras,
+   * porque en Three.js `info.reset()` va DESPUÉS de `shadowMap.render()`.
+   *
+   * El pase de sombras costaba **173 draw calls y 367.480 triángulos en cada
+   * fotograma**: entre el 61 % y el 79 % de las llamadas de dibujo del fotograma
+   * entero (269 en la vista de juego, 219-275 en las seis secciones) y el 47 %
+   * de los triángulos enviados. Y no se veía ni un píxel de ese trabajo:
+   * comparando el fotograma con el mapa recién horneado contra el mismo con
+   * `shadowMap.enabled = false` (que quita `USE_SHADOWMAP` del shader), la
+   * diferencia máxima por canal en las 7 vistas medidas es **0**. La causa es la
+   * dirección de la luz: el foco del techo está en la vertical, así que cada
+   * objeto proyecta su sombra justo debajo de sí mismo, donde su propio cuerpo
+   * la tapa, y el sesgo (`bias` + `normalBias`) termina de borrarla.
+   *
+   * Por eso el mapa se hornea A DEMANDA (`bakeShadows()`) en vez de cada frame.
+   * Para que un solo horneado siga siendo correcto indefinidamente, ningún
+   * objeto que se mueva puede proyectar: el jugador (41.586 triángulos), el
+   * balón y los dos actores del plató se quedan fuera del mapa (ver abajo).
+   * Después de eso el horneado dibujó **65 draw calls y 198.932 triángulos** en
+   * vez de 173 y 367.480. Tras el fundido de mallas estáticas (BITACORA §3l) y la
+   * limpieza de proyectantes de §3j, la medida de hoy del horneado es **9 draw
+   * calls y 281.388 triángulos**, y no queda ningún proyectante que se mueva.
+   *
+   * Si algún día se inclina la luz para que las sombras se vean (fase 3 del
+   * informe), hay que volver a activar `castShadow` en esos cuatro objetos
+   * móviles y rehornear al moverlos: entonces el mapa estático deja de ser
+   * válido y el recorte de draw calls hay que buscarlo en otro sitio.
+   */
+  renderer.shadowMap.autoUpdate = false;
   // Trove es una escena luminosa y saturada. ACES con exposición 1 lo apagaba y
   // desaturaba; se sube la exposición y se deja que el color quede vivo.
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -126,33 +172,94 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
    * la luz sale de focos altos, que es lo que cambia la imagen:
    *
    *  · **No hay sol.** La pista está bajo techo: ninguna luz viene de fuera.
-   *  · **Las sombras caen RECTAS hacia abajo**, porque el foco que las proyecta
-   *    está en la vertical. Al aire libre el sol las proyecta de lado, y ese
-   *    sesgo es lo que delataba el exterior.
+   *  · **Las sombras caen sesgadas**, desde el lado de la cámara: es una
+   *    batería de focos colgada de un lado del techo, no el sol. El sesgo es lo
+   *    que se ve en cualquier pabellón y lo que hace que los objetos se lean
+   *    apoyados en el suelo en vez de flotando.
    *  · **Luz muy uniforme**: los cuatro focos de esquina cruzan la pista en
    *    diagonal y rellenan lo que el central deja a oscuras.
    *  · **Tono cálido** de halogenuro metálico (ámbar pálido), no el azul del
    *    cielo.
    */
 
-  // Foco central de techo. Es el ÚNICO que proyecta sombras: un solo mapa de
-  // sombras bien ajustado cuesta mucho menos que cuatro, y como la luz es
-  // vertical las sombras no se cruzan entre sí.
-  // Intensidad calibrada contra una medición, no a ojo.
-  //
-  // A 2,9 el suelo se quemaba: el tono comprime las altas luces y el parqué
-  // (#d9a05b) y las líneas (#fdf6e8) acababan en el mismo valor, con lo que la
-  // pista se leía como una mancha beis sin dibujo. Bajado a 1,9 el suelo deja
-  // de saturar y las líneas vuelven a separarse.
-  const ceiling = new THREE.DirectionalLight(0xfff2dc, 1.9);
-  ceiling.position.set(1.5, 42, 3);
+  /*
+   * FOCO CLAVE, INCLINADO. Es la corrección estética de más impacto.
+   *
+   * Estaba en (1,5, 42, 3), prácticamente en la vertical. Con una luz vertical
+   * cada objeto proyecta su sombra JUSTO DEBAJO de sí mismo, donde su propio
+   * cuerpo la tapa, así que la escena no tenía ni una sombra visible: medido, el
+   * pase de sombras entero dejaba el fotograma idéntico (0 píxeles de
+   * diferencia) en las 7 vistas. Eso no es «poca sombra», es no tener ninguna, y
+   * es lo que hacía que el jugador, el balón y el atrezo parecieran flotar.
+   *
+   * A (10, 34, 12) la luz entra sesgada unos 24°, como una batería de focos
+   * colgada de un lado del techo. La misma escena pasa a estar apoyada: las
+   * sombras caen al lado contrario del foco y se leen la canasta, el banquillo,
+   * la mesa, el túnel y hasta las gradas.
+   *
+   * El mapa sigue siendo ESTÁTICO (ver arriba): lo que proyecta es la
+   * arquitectura, que no se mueve. El jugador y el balón —lo único que cambia de
+   * sitio— llevan su propia sombra de contacto.
+   *
+   * Intensidad 2,0, medida y no a ojo: a 2,9 el suelo se quemaba (el tonemapping
+   * comprime las altas luces y el parqué #d9a05b acababa al mismo valor que las
+   * líneas #fdf6e8, así que la pista se leía como una mancha beis sin dibujo).
+   * Con 24° de sesgo el suelo recibe el 91 % de la luz de antes, así que se sube
+   * de 1,9 a 2,0 para dejarlo igual de brillante.
+   */
+  const ceiling = new THREE.DirectionalLight(0xfff2dc, 2.0);
+  ceiling.position.set(10, 34, 12);
   ceiling.castShadow = true;
   ceiling.shadow.mapSize.set(coarse ? 1024 : 2048, coarse ? 1024 : 2048);
-  Object.assign(ceiling.shadow.camera, { left: -24, right: 24, top: 20, bottom: -20, near: 5, far: 90 });
-  ceiling.shadow.bias = -0.0004;
+  /*
+   * El frustum de la cámara de sombras SE QUEDA COMO ESTABA, y es una decisión
+   * medida, no una omisión.
+   *
+   * El informe proponía ajustarlo a la pista (±19 x ±16 m, near 32, far 48) en
+   * vez de a toda la escena (48 x 40 m, near 5, far 90). Se probó, y tiene un
+   * efecto que no se ve venir: al recortar `near`/`far` de 85 m a 16 m, el rango
+   * de profundidad se reduce 5,3 veces, y con él el sesgo de profundidad
+   * efectivo (`bias` va en unidades del rango) y el radio de la PCF en metros al
+   * afinar el texel de 2,34 cm a 1,86 cm. El resultado: reaparecen las sombras
+   * que el sesgo grande estaba tapando (auto-sombra de gradas, vallas, banquillo,
+   * postes y muro del plató).
+   *
+   * Medido con la sonda de dev, comparando el fotograma contra el mismo SIN pase
+   * de sombras (`shadowMap.enabled = false`, que quita `USE_SHADOWMAP` del
+   * shader):
+   *
+   *   · frustum original + `bias` original .............. 0 píxeles de diferencia
+   *     (las 7 vistas: juego + las 6 secciones)
+   *   · frustum ajustado + `bias` compensado ×5,3 ....... hasta 29.575 píxeles,
+   *     61 niveles de diferencia por canal
+   *
+   * Y no compra nada a cambio: con el frustum ajustado el horneado dibuja
+   * EXACTAMENTE los mismos 65 draw calls y 198.932 triángulos que con el
+   * original, porque los 65 proyectantes que quedan (gradas, vallas, aros,
+   * banquillo, túnel, mesa) están dentro de los dos marcos. Es decir: ajustarlo
+   * sólo cambia el aspecto y el coste lo decide la lista de proyectantes.
+   *
+   * Se deja como estaba hasta que la luz se incline (fase 3 del informe):
+   * entonces habrá que decidir el frustum y el `bias` JUNTOS, midiendo, porque
+   * las sombras serán el objetivo y no un artefacto que hay que dejar quieto.
+   */
+  // El marco cubre el PABELLÓN, no sólo la pista: con la luz sesgada, las
+  // gradas son las que reciben la sombra del público y de las torres, y son la
+  // mitad del fondo en las seis secciones. Caben las gradas (±29,6 m), las
+  // vallas (±17,8) y las cuatro torres (±26,8). El terreno de 180 m y la
+  // vegetación se quedan fuera, que es lo que se quiere.
+  //
+  // `bias` va en unidades del rango de profundidad (105 m aquí), así que bajarlo
+  // de -0,0004 a -0,0002 deja el sesgo en 2,1 cm de mundo: con la luz inclinada
+  // las sombras tienen que SOBREVIVIR al sesgo, no desaparecer por él.
+  Object.assign(ceiling.shadow.camera, { left: -30, right: 30, top: 26, bottom: -26, near: 5, far: 110 });
+  // Three sólo recalcula la matriz de proyección al crear el mapa, así que si
+  // estos números se tocan en caliente (desde la consola) hay que forzarla.
+  ceiling.shadow.camera.updateProjectionMatrix();
+  ceiling.shadow.bias = -0.0002;
   // `normalBias` quita el patrón de tejas en superficies voxel: desplaza la
   // muestra a lo largo de la normal del bloque en vez de a lo largo del rayo.
-  ceiling.shadow.normalBias = 0.06;
+  ceiling.shadow.normalBias = 0.05;
   scene.add(ceiling);
 
   // Cuatro baterías desde las torres de las esquinas, cruzando la pista en
@@ -196,7 +303,9 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
   //
   // Sigue siendo baja para que el pabellón se lea como cubierto, pero a 0,15
   // las caras que no ven el techo quedaban planas y sin color.
-  const hemi = new THREE.HemisphereLight(0xfff4d6, 0x3a4668, 0.55);
+  // Bajada de 0,55 a 0,38: con el foco clave ya sesgado, la hemisférica alta
+  // planchaba las sombras que se acaban de recuperar.
+  const hemi = new THREE.HemisphereLight(0xfff4d6, 0x3a4668, 0.38);
   scene.add(hemi);
 
   console.info(
@@ -209,129 +318,61 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
 
   // ───────── Assets .glb (con fallback procedural si no cargan)
   onProgress(0.3);
-  const [ballGLB, courtGLB] = await Promise.all([
-    loadModel('models/ball.glb'),
-    loadModel('models/voxel-court.glb'),
-  ]);
-  console.info(`[court] glTF cargados: balon=${!!ballGLB} cancha=${!!courtGLB}`);
+  /*
+   * SÓLO SE CARGA EL BALÓN.
+   *
+   * Antes se descargaba también `voxel-court.glb` (7,80 MB de los ~9 MB de la
+   * carga inicial) para aprovechar UNA de sus mallas: el suelo. Y esa malla trae
+   * una paleta de 256x1 px con DOS tonos planos y sin marcaje, así que el juego
+   * tenía que completarla dibujando sus líneas encima. Es decir: 7,8 MB y el
+   * voxelizado de 43.094 celdas a 0,1 m para un fondo que el suelo procedural
+   * —parqué dibujado por código, con su zona y sus líneas— ya daba.
+   *
+   * El balón (63 KB) sí se usa: su FORMA alimenta el voxelizador.
+   */
+  const ballGLB = await loadModel('models/ball.glb');
+  console.info(`[court] glTF cargado: balon=${!!ballGLB}`);
   if (ballGLB) normalize(ballGLB.scene, { targetSize: BALL.radius * BALL.visualScale * 2 });
-  let courtFloorReady = false;
-  if (courtGLB) {
-    // La cancha descargada ES la pista del juego, y pasa por el voxelizador
-    // igual que el resto del mundo.
-    //
-    // El modelo es voxel art de 0,1 m exactos (256 pasos de 0,1 medidos en sus
-    // vertices), asi que rasterizar a 0,1 m reproduce su dibujo sin perdida.
-    // Viene en Z-up: el giro va en un envoltorio para no pisar la transformada
-    // propia del modelo, que los GLB de Sketchfab ya traen.
-    const oriented = new THREE.Group();
-    oriented.rotation.x = -Math.PI / 2;
-    oriented.add(courtGLB.scene);
-    oriented.updateMatrixWorld(true);
-
-    // El suelo es la malla plana; su caja fija la escala y el centrado. Hay que
-    // usar ESA malla y no la caja del modelo entero: el modelo incluye las
-    // gradas (25,6 x 25,6 m) y centrar con ellas dejaria la pista descolgada.
-    let floorMesh: THREE.Mesh | null = null;
-    let thinnest = Infinity;
-    oriented.traverse((o) => {
-      const m = o as THREE.Mesh;
-      if (!m.isMesh) return;
-      const b = new THREE.Box3().setFromObject(m);
-      const th = b.max.y - b.min.y;
-      if (th < thinnest) {
-        thinnest = th;
-        floorMesh = m;
-      }
-    });
-
-    if (floorMesh) {
-      // `attach` conserva la transformada de mundo al cambiar de padre, así que
-      // el giro de Z-up y la escala propia del modelo ya vienen incluidos.
-      //
-      // La escala se aplica a un contenedor AISLADO con sólo esta malla, no al
-      // grupo que envuelve el modelo entero: escalar el grupo padre dejaba las
-      // coordenadas del mundo fuera de rango y el voxelizador descartaba las
-      // 47.663 caras del suelo por coste.
-      const holder = new THREE.Group();
-      holder.attach(floorMesh);
-
-      const fb = new THREE.Box3().setFromObject(holder);
-      const fsize = fb.getSize(new THREE.Vector3());
-      // Escalado en X/Z hasta que el suelo coincida con COURT (28 x 15 m): así
-      // los aros en ±12.425 m caen donde espera la física del tiro. Es no
-      // uniforme (el modelo mide 25,6 x 15,9), pero al ser una superficie plana
-      // no deforma ningún volumen.
-      holder.scale.set(COURT.length / fsize.x, 1, COURT.width / fsize.z);
-      holder.updateMatrixWorld(true);
-
-      const nb = new THREE.Box3().setFromObject(holder);
-      const nc = nb.getCenter(new THREE.Vector3());
-      holder.position.x -= nc.x;
-      holder.position.z -= nc.z;
-      holder.position.y -= nb.min.y;
-      holder.updateMatrixWorld(true);
-
-      const vw = new VoxelWorld(0.1);
-      const celdas = voxelizeMesh(vw, floorMesh, { grid: 0.1, fallback: PALETTE.hardwood });
-
-      // El suelo del modelo cubre el 94 % de su caja envolvente (medido sobre
-      // sus triángulos): quedan franjas sin marcar, sobre todo en el borde, por
-      // las que se ve el césped. Se rellenan con el color base para que la
-      // pista sea una superficie continua en vez de una rejilla agujereada.
-      const hx = Math.round(COURT.halfL / 0.1);
-      const hz = Math.round(COURT.halfW / 0.1);
-      for (let ix = -hx; ix < hx; ix++) {
-        for (let iz = -hz; iz < hz; iz++) {
-          if (!vw.occupied(ix, 0, iz)) vw.putCell(ix, 0, iz, PALETTE.hardwood);
-        }
-      }
-      // UNA SOLA CAPA, garantizada. El voxelizador marca dos (el plano de la
-      // cancha cae justo en el borde entre ellas) y las dos emitían su cara
-      // superior: 80.397 quads donde sólo caben 42.000. Borrar sólo la capa -1
-      // no bastaba; se vacía TODO lo que no sea la capa 0.
-      vw.eraseCells(-hx - 4, -60, -hz - 4, hx + 3, -1, hz + 3);
-      vw.eraseCells(-hx - 4, 1, -hz - 4, hx + 3, 60, hz + 3);
-
-      if (celdas > 0) {
-        // Solo la cara superior: es una superficie plana, el canto no se ve.
-        const g = vw.build({ name: 'court-floor', flatTop: true, flatY: 0.002 });
-        g.traverse((o) => {
-          const m = o as THREE.Mesh;
-          if (m.isMesh) m.castShadow = false;
-        });
-        scene.add(g);
-        courtFloorReady = true;
-        console.info(
-          `[court] suelo del glTF voxelizado: ${celdas} celdas a 0,1 m, ` +
-          `${vw.colorCount} colores de paleta`,
-        );
-      } else {
-        console.warn('[court] el glTF no produjo voxels; se conserva el suelo procedural');
-      }
-    }
-  }
   onProgress(0.45);
   await nextFrame();
 
   // ───────── Mundo
   const courtGroup = buildCourt(content.person.initials, renderer.capabilities.getMaxAnisotropy());
   scene.add(courtGroup);
-  if (courtFloorReady) {
-    // El suelo voxelizado del glTF hace de pista: se retira solo el suelo
-    // procedural con sus lineas, que si no quedaria coplanar encima y
-    // parpadearia (z-fighting). El terreno de alrededor SE MANTIENE: sin el la
-    // pista se lee como una isla flotando en el cielo.
-    const proceduralFloor = courtGroup.getObjectByName('floor');
-    if (proceduralFloor) proceduralFloor.visible = false;
-    // El suelo del modelo viene en dos tonos planos y sin marcaje (su paleta
-    // solo usa dos colores en esa malla), asi que las lineas se dibujan ENCIMA
-    // para que la pista se lea como una cancha de baloncesto.
-    scene.add(buildCourtLines(content.person.initials, renderer.capabilities.getMaxAnisotropy()));
-  }
-  scene.add(buildHoop(-1), buildHoop(1), buildBench(), buildTunnel(), buildScorerTable());
+  /**
+   * Uniforme del balanceo del público. Lo avanza `update()` con el reloj de la
+   * escena; es un único uniforme que comparten las cinco piezas del graderío.
+   */
+  const crowdTime = courtGroup.userData.crowdTime as { value: number } | undefined;
+  // Las LÍNEAS y la ZONA van en esta capa transparente a 4 mm sobre el parqué.
+  // Se comprobó muestreando el píxel de la textura del suelo: la zona que pinta
+  // `drawFloor` cae bajo la pista procedural y no se ve, así que el dibujo que
+  // se lee es el de `buildCourtLines`.
+  scene.add(buildCourtLines(content.person.initials, renderer.capabilities.getMaxAnisotropy()));
+  // Los atrezos se guardan en variables: al final de la carga entran, junto a la
+  // cancha y el plató, en el fundido de mallas estáticas (`batch.ts`).
+  const hoopL = buildHoop(-1);
+  const hoopR = buildHoop(1);
+  const benchProp = buildBench();
+  const tunnelProp = buildTunnel();
+  const scorerTable = buildScorerTable();
+  // Marcador colgado del techo, sobre el centro de la pista. Su estructura entra
+  // en el fundido del arranque; las dos pantallas (un material con textura) no.
+  const scoreboard = buildScoreboard();
+  scene.add(hoopL, hoopR, benchProp, tunnelProp, scorerTable, scoreboard);
   const set = buildInterviewSet();
   scene.add(set.group);
+
+  /*
+   * VOLÚMENES DE COLISIÓN.
+   *
+   * Se construyen una vez al arrancar (fase D). El jugador se resuelve contra
+   * ellos al moverse y el balón dentro de su integración, a 120 Hz por si va
+   * rápido. Son ~25 volúmenes: el coste es despreciable comparado con una llamada
+   * de dibujo, y sin ellos el personaje atravesaba el banquillo, la mesa y los
+   * postes.
+   */
+  const solids = buildColliders();
 
   const rings: THREE.Mesh[] = [];
   for (const z of ZONES) {
@@ -350,7 +391,12 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
     skin: 0xf0b27a, skinAlt: 0xd69457, hair: 0x54371f, hairAlt: 0x3b2515,
     jersey: 0xff8c3a, jerseyAlt: 0xd96a24, shorts: 0x35406b, shoes: 0xfdfdf6,
     accent: 0xffd54a, number: content.person.jerseyNumber,
+    anisotropy: renderer.capabilities.getMaxAnisotropy(),
   });
+  // El jugador es el mayor objeto que se mueve (41.586 triángulos) y su sombra
+  // cae bajo sus pies, donde no se ve: si proyectara, el mapa estático dejaría
+  // una copia suya congelada en el punto de saque en cuanto caminara.
+  noCastShadow(player.root);
   scene.add(player.root);
   const pos = player.root.position;
   let rotY = 0;
@@ -371,13 +417,71 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
     });
     console.info(`[ball] ${mallas} mallas, ${tris | 0} triángulos, glTF=${ballGLB ? 'sí' : 'NO'}`);
   }
+  noCastShadow(ballMesh);
   scene.add(ballMesh);
-  const ball = new Ball(ballMesh, {
-    score: onScore,
-    rim: () => sfx.rim(),
-    board: () => sfx.board(),
-    bounce: (v) => sfx.bounce(v),
+  const ball = new Ball(
+    ballMesh,
+    {
+      score: (side) => {
+        shakeNet();
+        onScore(side);
+      },
+      rim: () => sfx.rim(),
+      board: () => sfx.board(),
+      bounce: (v) => sfx.bounce(v),
+    },
+    // Los volúmenes de la pista: el balón rebota en las vallas, el banquillo, la
+    // mesa y los postes en vez de atravesarlos.
+    solids,
+  );
+
+  /*
+   * SOMBRAS DE CONTACTO del jugador y del balón.
+   *
+   * El mapa de sombras es estático (ver arriba), así que nada que se mueva puede
+   * proyectar en él: si el jugador proyectara, su silueta se quedaría clavada en
+   * el punto de saque en cuanto caminara. La alternativa era volver a hornear el
+   * mapa cada vez que da un paso, que es justo el coste que se quitó.
+   *
+   * En su lugar, cada objeto móvil lleva una mancha radial bajo los pies: 2 draw
+   * calls, se encoge y se aclara al despegar, y es lo que hace que el cuerpo se
+   * lea apoyado en el parqué y no pegado a él. Es la misma técnica que usa
+   * cualquier juego con sombras horneadas.
+   */
+  const blobTex = canvasTexture(64, 64, (g) => {
+    const grd = g.createRadialGradient(32, 32, 1, 32, 32, 31);
+    grd.addColorStop(0, 'rgba(0,0,0,0.75)');
+    grd.addColorStop(0.55, 'rgba(0,0,0,0.3)');
+    grd.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, 64, 64);
   });
+  const blob = (size: number): THREE.Mesh => {
+    const m = new THREE.Mesh(
+      new THREE.PlaneGeometry(size, size),
+      new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false }),
+    );
+    m.rotation.x = -Math.PI / 2;
+    m.position.y = 0.022;
+    m.renderOrder = 1;
+    return m;
+  };
+  const playerBlob = blob(1.2);
+  const ballBlob = blob(0.34);
+  scene.add(playerBlob, ballBlob);
+
+  /*
+   * Redes del aro: la sacudida al entrar el balón.
+   *
+   * Amplitud 1 al anotar y decae en medio segundo; el tiempo lo pone el reloj de
+   * la escena. Con `prefers-reduced-motion` el reloj vale 0, así que la red se
+   * queda quieta sin necesidad de una rama aparte.
+   */
+  let netAmp = 0;
+  const shakeNet = (): void => {
+    netAmp = 1;
+    NET.amp.value = 1;
+  };
 
   // ───────── UI y estado
   const uiRoot = document.getElementById('ui')!;
@@ -411,6 +515,9 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
   window.addEventListener('langchange', () => canvas.setAttribute('aria-label', t('aria_game')));
   hud.setProgress(visited.size);
   hud.setRecord(stats.made, stats.attempted);
+  // El marcador del techo arranca con el récord guardado, no en 0/0.
+  scoreboard.setScore(stats.made, stats.attempted);
+  refreshMenu();
 
   // Los carteles flotantes usan los textos de objeto (sign_*), no los del menú.
   for (const z of ZONES) hud.addLabel(z.id, signKey(z.id));
@@ -482,6 +589,21 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
     visited.add(id);
     saveSet('court.visited', visited);
     hud.setProgress(visited.size);
+    refreshMenu();
+  }
+
+  /**
+   * Estado de cada sección para el menú (✓ visitada, ○ pendiente, ✕ bloqueada).
+   *
+   * Una zona de tiro está bloqueada hasta que se encesta en su canasta. Se
+   * recalcula en los tres momentos en que puede cambiar: al arrancar, al visitar
+   * una sección y al desbloquear una zona.
+   */
+  function refreshMenu(): void {
+    hud.setMenuState(
+      visited,
+      ZONES.filter((z) => z.kind === 'shoot' && !unlocked.has(z.id)).map((z) => z.id),
+    );
   }
 
   /**
@@ -542,10 +664,18 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
 
   function onScore(side: Side): void {
     sfx.swish();
+    // El «golpe» de la canasta: media décima de segundo de sacudida.
+    shake = SHAKE_TIME;
+    const crowdFx2 = courtGroup.userData.crowdFx as { wave: { value: number }; jump: { value: number } } | undefined;
+    if (crowdFx2) {
+      crowdFx2.jump.value = 1;
+      crowdFx2.wave.value = 0;
+    }
     missStreak = 0;
     stats.made++;
     saveStats(stats);
     hud.setRecord(stats.made, stats.attempted);
+    scoreboard.setScore(stats.made, stats.attempted);
 
     const zone = zoneFor(side);
     // La canasta derecha ya no desbloquea nada: solo suma al récord.
@@ -559,6 +689,7 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
     }
     unlocked.add(zone.id);
     saveSet('court.unlocked', unlocked);
+    refreshMenu();
     sfx.cheer();
     hud.toast(`${t('unlocked')}: ${t(sectionKey(zone.id))}`, 3000);
     window.setTimeout(() => mode === 'play' && openSection(zone.id, false), 1300);
@@ -568,6 +699,7 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
     stats.attempted++;
     saveStats(stats);
     hud.setRecord(stats.made, stats.attempted);
+    scoreboard.setScore(stats.made, stats.attempted);
     const side = nearestSide();
     const rim = new THREE.Vector3(rimX(side), RIM.y, 0);
     const from = new THREE.Vector3(pos.x + Math.sin(rotY) * 0.2, 2.15, pos.z + Math.cos(rotY) * 0.2);
@@ -650,6 +782,26 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
   const lookGoal = new THREE.Vector3();
   const lookNow = new THREE.Vector3();
   let dist = 1;
+
+  /*
+   * Estado de la cámara y del aterrizaje (fases B y C).
+   *
+   *  · `advX/advZ`: dirección de marcha suavizada, para el adelanto del encuadre.
+   *  · `zoomNow`: acercamiento al cargar el tiro (1 = sin acercar).
+   *  · `shake`: tiempo que le queda a la sacudida de la canasta.
+   *  · `land`: 1 justo al tocar suelo y baja a 0 en un cuarto de segundo.
+   */
+  const SHAKE_TIME = 0.15;
+  let advX = 0;
+  let advZ = 0;
+  let advTargetX = 0;
+  let advTargetZ = 0;
+  let zoomNow = 1;
+  let shake = 0;
+  let camTime = 0;
+  let land = 0;
+  let wasGrounded = true;
+
   function updateCamera(dt: number, snap = false): void {
     if (import.meta.env.DEV && dbg.freeze) return;
     const sec = sectionCam ? SECTION_CAMERA[sectionCam] : null;
@@ -659,15 +811,53 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
       // a la sección es la que da el encuadre y no el formato de la pantalla.
       camGoal.set(...sec.pos);
       lookGoal.set(...sec.look);
+      zoomNow += (1 - zoomNow) * (1 - Math.exp(-6 * Math.max(dt, 0)));
     } else {
       const tx = clamp(pos.x, -CAMERA.clampX, CAMERA.clampX);
       const tz = clamp(pos.z, CAMERA.minZ, CAMERA.maxZ);
-      lookGoal.set(tx, 0.8, tz);
-      camGoal.set(tx + CAMERA.offset[0] * dist, CAMERA.offset[1] * dist, tz + CAMERA.offset[2] * dist);
+      /*
+       * ADELANTO. El objetivo de mirada va por delante del jugador y la cámara
+       * también: el cuerpo queda abajo del encuadre y se ve el terreno al que va,
+       * que es lo que hace legible moverse por una pista grande desde arriba.
+       */
+      const ax = advX * CAMERA.advance;
+      const az = advZ * CAMERA.advance;
+      lookGoal.set(tx + ax * 0.8, 0.8, tz + az * 0.8);
+      const d = dist * zoomNow;
+      camGoal.set(tx + CAMERA.offset[0] * d + ax, CAMERA.offset[1] * d, tz + CAMERA.offset[2] * d + az);
+      /*
+       * ÓRBITA LENTA CON EL PANEL ABIERTO.
+       *
+       * Al abrir una sección el juego se queda quieto y la escena de al lado se
+       * congelaba de golpe. Con esto la cámara gira ±9° en torno al jugador muy
+       * despacio (0 coste: sólo la matriz de la cámara), y la pista sigue viva
+       * detrás del panel. Con `prefers-reduced-motion` no gira.
+       */
+      if (mode === 'panel' && !reduced) {
+        const th = Math.sin(camTime * 0.18) * 0.16;
+        const ox = camGoal.x - tx;
+        const oz = camGoal.z - tz;
+        camGoal.x = tx + ox * Math.cos(th) - oz * Math.sin(th);
+        camGoal.z = tz + ox * Math.sin(th) + oz * Math.cos(th);
+      }
+      zoomNow += ((charging ? CAMERA.chargeZoom : 1) - zoomNow) * (1 - Math.exp(-6 * Math.max(dt, 0)));
     }
     const k = snap || reduced ? 1 : 1 - Math.exp(-CAMERA.lerp * dt);
     camera.position.lerp(camGoal, k);
     lookNow.lerp(lookGoal, k);
+    /*
+     * SACUDIDA de la canasta (fase C): 0,15 s de ±2,2 cm. Tres senos de
+     * frecuencias distintas y desfasadas para que el temblor no se lea como un
+     * vaivén en una sola dirección, y con la amplitud cayendo a cero, que es lo
+     * que lo hace parecer un golpe y no un terremoto.
+     */
+    if (shake > 0 && !reduced) {
+      shake = Math.max(0, shake - dt);
+      const a = 0.022 * (shake / SHAKE_TIME);
+      camera.position.x += Math.sin(camTime * 61) * a;
+      camera.position.y += Math.sin(camTime * 47 + 1.7) * a;
+      camera.position.z += Math.sin(camTime * 53 + 3.1) * a;
+    }
     camera.lookAt(lookNow);
   }
 
@@ -677,7 +867,8 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
     renderer.setPixelRatio(pixelRatio);
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
-    dist = clamp(1.5 / camera.aspect, 1, 2.4); // en vertical se aleja para ver más cancha
+    // En vertical se ve más cancha, pero a media fuerza: ver `CAMERA.portraitGrow`.
+    dist = clamp(1 + (1.5 / camera.aspect - 1) * CAMERA.portraitGrow, 1, 2.4);
     camera.updateProjectionMatrix();
   }
   window.addEventListener('resize', resize);
@@ -691,13 +882,111 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
   const camTo = new THREE.Vector3();
   const toZone = new THREE.Vector3();
   const clock = new THREE.Clock();
+  const gl = renderer.getContext();
   let raf = 0;
-  let slowFrames = 0;
 
-  function update(dt: number, time: number): void {
+  /*
+   * CALIDAD ADAPTATIVA CON OBJETIVO DE 60 FPS.
+   *
+   * La versión anterior contaba fotogramas por encima de 1/24 s (41,7 ms) y bajaba
+   * la resolución de 0,25 en 0,25 con un suelo de 1. En la práctica no se disparaba
+   * nunca en el caso que importa: un renderizador por software (el panel) que hace
+   * el fotograma en 33-43 ms y por tanto alterna 16,7 / 33,3 / 50 ms. Eso es
+   * exactamente lo que se percibe como stutter al moverse, y el ajuste no lo tocaba.
+   *
+   * Ahora se mide la MEDIANA de los últimos 30 intervalos (60 fps = 16,7 ms) y se
+   * distingue de quién es la culpa: si el intervalo no cabe pero el COSTE real de
+   * render tampoco (medido con un `readPixels` de 1 píxel, que fuerza el flush y por
+   * eso mide rasterizado y no envío de comandos), se baja la resolución; si el
+   * intervalo no cabe pero el coste es pequeño, el que no da 60 fps es el sistema
+   * (p. ej. una pestaña sin foco, que Chromium limita) y bajar resolución sólo
+   * emborronaría la escena a cambio de nada.
+   *
+   * El suelo es 0,7 (no 1) porque es precisamente en un rasterizador por software
+   * donde hace falta: en la GPU del propietario esto no se activa nunca.
+   */
+  const ESCALA_MAX = pixelRatio;
+  const ESCALA_MIN = 0.7;
+  let techoFallido = ESCALA_MAX; // la mayor escala que NO dio 60 fps: no se reintenta
+  let hist: number[] = [];
+  let medianaMs = 0; // última mediana calculada (0 = aún sin ventana llena)
+  let costeRender = -1; // ms del último fotograma medido con flush
+  let desdeCoste = 0;
+  let subiendo = 0;
+  const pixel = new Uint8Array(4);
+
+  function mediana(a: number[]): number {
+    const s = [...a].sort((x, y) => x - y);
+    return s[s.length >> 1]!;
+  }
+
+  /** Ajusta la escala de render según lo medido. Devuelve si ha cambiado. */
+  /*
+   * ARRANQUE: los primeros fotogramas NO cuentan.
+   *
+   * Compilar los shaders y hornear el mapa de sombras se lleva un fotograma de
+   * decenas de milisegundos, y con la ventana de 30 ese pico entraba en la
+   * mediana y bajaba la escala a 0,7 nada más cargar, sin que el juego fuera
+   * lento (medido: 102 ms en el primer fotograma, 20 ms después). Se ignoran los
+   * 45 primeros, que es lo que tarda la escena en quedarse en régimen.
+   */
+  let frames = 0;
+
+  /** Ajusta la escala de render según lo medido. Devuelve si ha cambiado. */
+  function calidad(inter: number, coste: number): boolean {
+    if (++frames < 45) return false;
+    hist.push(inter);
+    if (hist.length < 30) return false;
+    const m = mediana(hist);
+    medianaMs = m;
+    hist = hist.slice(-20); // media ventana, así reacciona al cambio sin oscilar
+    if (m > 19) {
+      subiendo = 0;
+      // El umbral es el PRESUPUESTO del fotograma (16,7 ms) y no un valor bajo:
+      // un coste de 14 ms cabe en 60 fps, y bajar resolución ahí sólo emborrona.
+      if (coste > 15 && pixelRatio > ESCALA_MIN + 0.001) {
+        techoFallido = Math.min(techoFallido, pixelRatio);
+        pixelRatio = Math.max(ESCALA_MIN, +(pixelRatio - 0.1).toFixed(2));
+        hist = [];
+        console.info(`[calidad] fotograma ${m.toFixed(1)} ms con coste ${coste.toFixed(1)} ms -> escala ${pixelRatio}`);
+        return true;
+      }
+      return false;
+    }
+    // Con 60 fps de verdad (16,7 ms) y margen, se recupera resolución: despacio y
+    // sin volver a pisar la escala que ya falló.
+    if (m <= 17.5 && pixelRatio < Math.min(techoFallido - 0.05, ESCALA_MAX)) {
+      if (++subiendo >= 90) {
+        subiendo = 0;
+        pixelRatio = Math.min(techoFallido - 0.05, ESCALA_MAX, +(pixelRatio + 0.1).toFixed(2));
+        hist = [];
+        console.info(`[calidad] 60 fps con coste ${coste.toFixed(1)} ms -> escala ${pixelRatio}`);
+        return true;
+      }
+    } else subiendo = 0;
+    return false;
+  }
+
+  /*
+   * Velocidad suavizada del jugador. DEBE vivir fuera de `update`: antes era un
+   * `let` local inicializado a 0 en cada fotograma, así que el suavizado nunca
+   * pasaba de un 18 % de la entrada y la zancada salía casi imperceptible.
+   */
+  let speed01 = 0;
+
+  /**
+   * @param time     reloj decorativo (se congela con `prefers-reduced-motion`).
+   * @param animTime reloj del PERSONAJE: nunca se congela. La zancada es
+   *                 respuesta directa a la entrada del jugador (feedback de juego),
+   *                 no decoración; con el reloj a 0, `sin(time)` era siempre 0 y el
+   *                 personaje se deslizaba sin mover las piernas.
+   */
+  function update(dt: number, time: number, animTime = time): void {
+    camTime = time;
     const playing = mode === 'play';
-    let speed01 = 0;   // valor suavizado, el que consume la animación
     let speedTarget = 0; // valor bruto de entrada
+    advTargetX = 0;
+    advTargetZ = 0;
 
     if (playing) {
       const wants = input.shootHeld && ball.state === 'held';
@@ -733,8 +1022,20 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
           const dz = mv.z / len;
           pos.x = clamp(pos.x + dx * PLAYER.speed * k * dt, PLAYER.bounds.minX, PLAYER.bounds.maxX);
           pos.z = clamp(pos.z + dz * PLAYER.speed * k * dt, PLAYER.bounds.minZ, PLAYER.bounds.maxZ);
+          /*
+           * COLISIONES (fase D).
+           *
+           * Se resuelve DESPUÉS de mover y de acotar: el jugador avanza, el
+           * rectángulo de juego lo sujeta y los volúmenes lo empujan fuera con
+           * deslizamiento. Va aquí y no antes porque mover primero y luego
+           * corregir es lo que hace que se pueda caminar pegado a la valla en
+           * diagonal sin trabarse.
+           */
+          resolveCircle(pos, PLAYER_RADIUS, solids);
           rotY = lerpAngle(rotY, Math.atan2(dx, dz), 1 - Math.exp(-14 * dt));
           speedTarget = k;
+          advTargetX = dx * k;
+          advTargetZ = dz * k;
 
           // ¿Ha girado? Almacenando el ángulo en el momento del cambio, y no en
           // cada fotograma, se evita el parpadeo: hace falta acumular otros 40°
@@ -762,13 +1063,33 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
     // notaría todavía más.
     speed01 += (speedTarget - speed01) * (1 - Math.exp(-12 * dt));
 
+    /*
+     * Adelanto de cámara: se suaviza la dirección de marcha con su propia
+     * constante (más lenta que la del movimiento) para que un cambio de sentido
+     * no dé un latigazo al encuadre.
+     */
+    const kAdv = 1 - Math.exp(-5 * dt);
+    advX += (advTargetX - advX) * kAdv;
+    advZ += (advTargetZ - advZ) * kAdv;
+
     // Salto. `grounded` sale de aquí porque la animación recoge las piernas al
     // estar en el aire, y antes nunca se pasaba: siempre `true`, así que la
     // pose de vuelo era código muerto.
     const grounded = stepJump(jump, dt);
     pos.y = jump.y;
 
-    animateHuman(player, time, speed01, ball.state === 'held' && !charging, grounded);
+    /*
+     * ATERRIZAJE (fase B): flexión de rodillas brevisima al tocar suelo.
+     *
+     * El salto del tiro bajaba y se plantaba de golpe, como un ascensor. Con el
+     * aviso de aterrizaje el cuerpo se hunde 12 cm mientras flexiona y vuelve en
+     * un cuarto de segundo, que es lo que hace un jugador de verdad al caer.
+     */
+    if (grounded && !wasGrounded) land = 1;
+    wasGrounded = grounded;
+    if (land > 0) land = Math.max(0, land - dt * 4.5);
+
+    animateHuman(player, animTime, speed01, ball.state === 'held' && !charging, grounded, land);
     if (charging) poseShoot(player, Math.min(chargeT / CHARGE_FULL, 1));
     if (flick > 0) {
       flick -= dt;
@@ -776,11 +1097,11 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
     }
     if (celebrate > 0) {
       celebrate -= dt;
-      poseCelebrate(player, time, Math.min(celebrate / 1.6, 1));
+      poseCelebrate(player, animTime, Math.min(celebrate / 1.6, 1));
     }
 
-    // Balón
-    if (ball.state === 'held') placeHeldBall(time, speed01);
+    // Balón (el bote va sincronizado con la zancada: mismo reloj).
+    if (ball.state === 'held') placeHeldBall(animTime, speed01);
     else {
       ball.step(dt);
       // RECOGIDA: si el jugador pasa por encima del balón, vuelve a las manos.
@@ -796,6 +1117,20 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
         ball.state = 'held';
       }
     }
+
+    // Sombras de contacto: siguen al jugador y al balón, y se aclaran con la
+    // altura (el salto del tiro y el balón en el aire).
+    const pK = Math.min(1, Math.max(0, pos.y) / 0.6);
+    playerBlob.position.set(pos.x, 0.022, pos.z);
+    playerBlob.scale.setScalar(1 - pK * 0.28);
+    (playerBlob.material as THREE.MeshBasicMaterial).opacity = 0.9 - pK * 0.4;
+    const bK = Math.min(1, Math.max(0, ball.pos.y - 0.12) / 3.4);
+    ballBlob.position.set(ball.pos.x, 0.022, ball.pos.z);
+    ballBlob.scale.setScalar(1 + bK * 1.5);
+    (ballBlob.material as THREE.MeshBasicMaterial).opacity = 0.85 * (1 - bK * 0.8);
+
+    // Público: el balanceo del graderío. Sin matrices en CPU, sólo el reloj.
+    if (crowdTime) crowdTime.value = time;
 
     // Zonas, avisos e interacción
     let active: Zone | null = null;
@@ -817,6 +1152,21 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
       const shootZone = zoneFor(side);
       const near = Math.abs(pos.x - rimX(side)) <= SHOOT_RANGE && !!shootZone && !unlocked.has(shootZone.id);
       hud.setPrompt(playing && near && ball.state === 'held' && !charging ? (coarse ? t('hint_shoot_touch') : t('hint_shoot')) : null);
+    }
+
+    // Redes del aro: la onda baja mientras haya algo que contar.
+    NET.time.value = time;
+    if (netAmp > 0) {
+      netAmp = Math.max(0, netAmp - dt * 2.2);
+      NET.amp.value = netAmp;
+    }
+    // Público: la ola de celebración sale del centro y recorre la grada.
+    const crowdFx = courtGroup.userData.crowdFx as { wave: { value: number }; jump: { value: number } } | undefined;
+    if (crowdFx) {
+      if (crowdFx.jump.value > 0) {
+        crowdFx.jump.value = Math.max(0, crowdFx.jump.value - dt * 0.75);
+        crowdFx.wave.value += dt * 22;
+      }
     }
 
     // Decorado vivo
@@ -881,33 +1231,58 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
       }
 
       const onScreen = front && Math.abs(nx) <= 1 && Math.abs(ny) <= 1;
-      if (!onScreen) {
-        // Escala el punto hasta que toca el borde del rectángulo visible. El
-        // 0,84 deja margen para que el rótulo y la flecha no se recorten.
-        const k = Math.max(Math.abs(nx) / 0.84, Math.abs(ny) / 0.84) || 1;
-        nx /= k;
-        ny /= k;
-      }
 
+      /*
+       * La posición se PIDE en píxeles y sin recortar. Fuera de pantalla el
+       * punto es el que toca el borde, pero recortarlo aquí con un margen fijo
+       * en NDC cortaba los rótulos largos: el margen no sabía cuánto medía cada
+       * uno. El recorte por caja real y la separación entre rótulos los hace el
+       * HUD, que es quien puede medirlos.
+       */
       hud.placeLabel(z.id, (nx * 0.5 + 0.5) * w, (-ny * 0.5 + 0.5) * h, onScreen, angle, dist);
       hud.setLabelLocked(z.id, z.kind === 'shoot' && !unlocked.has(z.id));
       if (mode === 'interview') hud.hideLabel(z.id, true);
     }
+    hud.layoutLabels(w, h);
+  }
+
+  /** Re-hornea el mapa de sombras (estático). Cuesta un fotograma con el pase completo. */
+  function bakeShadows(): void {
+    renderer.shadowMap.needsUpdate = true;
+    renderer.render(scene, camera);
   }
 
   function frame(): void {
     raf = requestAnimationFrame(frame);
     const dt = Math.min(clock.getDelta(), 1 / 20);
-    update(dt, clock.elapsedTime);
-    renderer.render(scene, camera);
+    /*
+     * `time` es SÓLO el reloj de las animaciones (braceo, bote del balón,
+     * pulso de los anillos, parpadeo del ON AIR, balanceo del público): el
+     * movimiento del juego va por `dt`. Por eso, con `prefers-reduced-motion`
+     * basta con congelar este argumento para que todo lo decorativo se pare de
+     * golpe, sin tocar ni una animación de una en una — y sin dejar el juego
+     * injugable, que es lo que pasaría si se parara el propio bucle.
+     */
+    update(dt, reduced ? 0 : clock.elapsedTime, clock.elapsedTime);
 
-    // Calidad adaptativa: si va lento, baja la resolución de render
-    slowFrames = dt > 1 / 24 ? slowFrames + 1 : Math.max(0, slowFrames - 1);
-    if (slowFrames > 90 && pixelRatio > 1) {
-      pixelRatio = Math.max(1, pixelRatio - 0.25);
-      slowFrames = 0;
-      resize();
+    /*
+     * El coste se mide SÓLO cuando el intervalo ya no cabe y como mucho cada 120
+     * fotogramas: el `readPixels` fuerza el flush y eso alarga ese fotograma, así
+     * que no se paga cuando todo va bien ni se paga en cada comprobación.
+     */
+    desdeCoste++;
+    // `medianaMs` y no `hist.length`: la ventana se recorta a 20 dentro de
+    // `calidad`, así que comprobar el tamaño aquí dejaría la medida de coste sin
+    // disparar nunca (era el fallo de la primera versión).
+    const medir = medianaMs > 19 && (desdeCoste >= 120 || costeRender < 0);
+    const t0 = medir ? performance.now() : 0;
+    renderer.render(scene, camera);
+    if (medir) {
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+      costeRender = performance.now() - t0;
+      desdeCoste = 0;
     }
+    if (calidad(dt * 1000, costeRender)) resize();
   }
 
   const onVisibility = (): void => {
@@ -919,6 +1294,71 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
   };
   document.addEventListener('visibilitychange', onVisibility);
 
+  /*
+   * Horneado del mapa de sombras: UNA vez, con la escena ya completa.
+   *
+   * Tiene que ir aquí y no antes: el balón, el jugador, el plató y los anillos
+   * se añaden más arriba, y el mapa se hornea con lo que haya en la escena en
+   * ese momento. El único otro momento que pide rehornear es un cambio de luz.
+   */
+  /*
+   * Fundido de mallas estáticas, justo antes de hornear las sombras.
+   *
+   * El material único dejó 83 mallas del mundo compartiendo shader y estado;
+   * cada una seguía siendo un draw call. Aquí se cuece su `matrixWorld` en la
+   * geometría y se funden por estado de sombras y celda de 24 m. Se deja FUERA
+   * todo lo que se mueve (jugador, balón y los dos actores del plató) porque su
+   * sombra se hornearía congelada y porque su pose cambia cada fotograma.
+   *
+   * Va en una función con nombre, y no suelto aquí, para poder repetirla desde el
+   * gancho de desarrollo: así se puede comparar el fotograma fundido con el de
+   * antes SIN recargar y sin depender de dos cargas distintas (que es la única
+   * forma de que la comparación de píxeles sea concluyente).
+   */
+  const BATCH_CELL = 24;
+  /** El `cell` es un parámetro —y no la constante— para poder barrerlo desde el gancho de
+   * desarrollo: 24 m da 6 lotes y +18 % de triángulos en la vista de juego; menos celda son
+   * más llamadas y menos triángulos. Ver BITACORA §3l. */
+  function mergeStaticLots(cell = BATCH_CELL): void {
+    const b = batchStaticMeshes(
+      scene,
+      [courtGroup, hoopL, hoopR, benchProp, tunnelProp, scorerTable, set.group, scoreboard],
+      {
+        material: VOXEL_MATERIAL,
+        cell,
+        // Las redes del aro NO están en esta lista porque no hace falta: usan su
+        // propio material (el de la ondulación), y el fundido sólo toca las mallas
+        // que comparten `VOXEL_MATERIAL`. Es decir, quedan sueltas y animables, que
+        // es justo lo que se quiere: son las únicas piezas de la canasta con
+        // movimiento propio. Los cuatro que sí hay que excluir son los rigs, que
+        // comparten material con el mundo y cambian de pose cada fotograma.
+        exclude: [player.root, ballMesh, set.reporter.root, set.operator.root],
+      },
+    );
+    if (b.merged === 0) return; // ya estaba fundido
+    console.info(
+      `[batch] fundidas ${b.merged} mallas -> ${b.batches} lotes ` +
+        `(${cell} m) · ${b.triangles | 0} triángulos (antes ${b.before | 0}, ` +
+        `descartadas ${b.skipped}) · ${(b.bytes / 1048576).toFixed(1)} MB`,
+    );
+  }
+  /*
+   * Y va ANTES del horneado: el mapa de sombras se cuece con lo que haya en la
+   * escena, así que si se fundiera después, las sombras del primer fotograma se
+   * habrían calculado con las 81 mallas sueltas. Fundir primero deja el mapa
+   * idéntico —los triángulos son los mismos, en el mismo sitio— pero garantiza
+   * que no haya dos caminos distintos según el orden.
+   */
+  /*
+   * Interruptor de MEDICIÓN, sólo en desarrollo: `?nobatch=1` carga la escena sin
+   * fundir. Sin él no hay forma de comparar las llamadas de dibujo contra el estado
+   * anterior —la fusión es destructiva, la escena de antes ya no existe— y la
+   * comparación entre dos cargas distintas sólo es válida si lo único que cambia
+   * es esta línea.
+   */
+  if (!(import.meta.env.DEV && new URLSearchParams(location.search).has('nobatch'))) mergeStaticLots();
+
+  bakeShadows();
   onProgress(1);
   // Ganchos de depuración SOLO en desarrollo: Vite los elimina del build.
   // Sirven para medir la escena desde la consola sin abrir el código.
@@ -929,6 +1369,80 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
       renderer,
       rings,
       ZONES,
+      /** Repite el fundido de mallas estáticas (ya no encuentra nada después). */
+      batch: mergeStaticLots,
+      /** Estado de la calidad adaptativa (escala, ventana de intervalos, coste). */
+      calidad: () => ({
+        escala: pixelRatio,
+        max: ESCALA_MAX,
+        min: ESCALA_MIN,
+        techoFallido,
+        ventana: hist.length,
+        medianaMs: +medianaMs.toFixed(1),
+        costeMs: +costeRender.toFixed(1),
+        desdeCoste,
+      }),
+      /** Mide el coste real de un fotograma (render + flush) sin tocar la escena. */
+      costeRender(): number {
+        const t0 = performance.now();
+        renderer.render(scene, camera);
+        gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+        return +(performance.now() - t0).toFixed(2);
+      },
+      /**
+       * Cuenta llamadas de dibujo y triángulos de un fotograma con un contador a
+       * nivel de WebGL, y de paso de qué vistas se pide.
+       *
+       * Se cuenta en el contexto y NO con `renderer.info` porque en Three.js
+       * `info.reset()` va después de `shadowMap.render()`: el pase de sombras no
+       * aparece nunca en `info`. Aquí el pase de sombras es la diferencia entre un
+       * render que lo pide (`needsUpdate`) y uno normal, que con
+       * `autoUpdate = false` sólo dibuja el visible.
+       */
+      draws(views: SectionId[] = []): Record<string, [number, number]> {
+        type Ctx = WebGL2RenderingContext & { __m?: { n: number; t: number } };
+        const g = renderer.getContext() as Ctx;
+        if (!g.__m) {
+          g.__m = { n: 0, t: 0 };
+          const spec: Record<string, (a: unknown[]) => number> = {
+            drawElements: (a) => a[1] as number,
+            drawArrays: (a) => a[2] as number,
+            drawElementsInstanced: (a) => (a[1] as number) * (a[4] as number),
+            drawArraysInstanced: (a) => (a[2] as number) * (a[4] as number),
+          };
+          for (const f of Object.keys(spec)) {
+            const orig = (g as unknown as Record<string, (...a: unknown[]) => unknown>)[f]!.bind(g);
+            (g as unknown as Record<string, unknown>)[f] = (...a: unknown[]) => {
+              const m = g.__m!;
+              m.n++;
+              if (a[0] === g.TRIANGLES) m.t += spec[f]!(a);
+              return orig(...a);
+            };
+          }
+        }
+        const one = (shadow: boolean): [number, number] => {
+          g.__m!.n = 0;
+          g.__m!.t = 0;
+          if (shadow) renderer.shadowMap.needsUpdate = true;
+          renderer.render(scene, camera);
+          return [g.__m!.n, Math.round(g.__m!.t / 3)];
+        };
+        const visible = one(false);
+        const bake = one(true);
+        const out: Record<string, [number, number]> = {
+          visible,
+          sombras: [bake[0] - visible[0], bake[1] - visible[1]],
+        };
+        for (const v of views) {
+          sectionCam = v;
+          rotY = SECTION_CAMERA[v].face;
+          updateCamera(0, true);
+          out[v] = one(false);
+        }
+        return out;
+      },
+      /** Re-hornea el mapa de sombras tras tocar luces o proyectantes. */
+      bakeShadows,
       /** Congela el objetivo de cámara para poder encuadrar a mano desde la consola. */
       get freeze() { return dbg.freeze; },
       set freeze(v: boolean) { dbg.freeze = v; },
