@@ -24,19 +24,61 @@ export function mat(color: number): THREE.MeshStandardMaterial {
  * de la escena en 18 (los 8 `MeshBasicMaterial` de anillos y rótulos siguen
  * aparte, que esos sí son distintos).
  *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * POR QUÉ ES UN `MeshLambertMaterial` Y NO UN `MeshStandardMaterial`
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * Porque con `roughness: 0.92` y `metalness: 0` el modelo PBR no estaba
+ * aportando NADA, y su recorrido se pagaba en TODOS los fragmentos del mundo.
+ *
+ *  · **Metalness 0** deja fuera el término metálico entero, así que de las dos
+ *    familias de reflectancia sólo queda la dieléctrica.
+ *  · **Roughness 0,92** deja el especular difuso en su mínimo: el F0 de una
+ *    dieléctrica es 0,04, y a esa rugosidad el lóbulo está tan abierto que lo
+ *    que sale es un velo por debajo del 1 % — y por debajo del tonemapping ACES
+ *    (que ya le suma exposición) es indistinguible de que no exista.
+ *
+ * Es decir: el resultado de esos dos números es, matemáticamente, un LAMBERT.
+ * Una normal, un `dot` por luz, un color difuso. Todo lo demás que pagaba el
+ * `MeshStandardMaterial` —el barrido de IBL, el Cook-Torrance, el Fresnel— era
+ * coste por fragmento para producir ese mismo difuso, en la malla que más
+ * píxeles cubre de toda la escena.
+ *
+ * Y el ahorro es por FRAGMENTO, que es donde duele: el número de luces (ocho)
+ * y el de triángulos son los mismos, pero el shader del voxel deja de repetir
+ * el PBR completo por cada punto de la pista, de las gradas y del plató.
+ *
+ * Lo que NO se toca, porque ahí sí hay un término especular que se ve:
+ *  · la red de los aros (`props.ts`, `netMat()`), que además lleva su
+ *    `onBeforeCompile` de la ondulación;
+ *  · los materiales con textura: suelo de líneas, plató, marcador y rótulos;
+ *  · `mat()` (el low-poly cacheado por color, con `flatShading`), que es OTRO
+ *    material y sigue siendo `MeshStandardMaterial`;
+ *  · la grada y su cara de foco (`court.ts`), que tampoco lo usan.
+ *
+ * El único cambio de aspecto posible es el especular que se apaga, y es de un
+ * nivel o menos. Para comprobarlo con DOS NÚMEROS y no con dos builds, el
+ * desarrollo lo puede devolver con `?nolambert=1`: `main.ts` sustituye este
+ * material por un `MeshStandardMaterial` equivalente en toda la escena ANTES de
+ * hornear sombras y de precompilar, y anuncia el cambio en la consola con
+ * `[gpu] voxel=Standard`. Sin ese interruptor, `VOXEL_MATERIAL` no se puede
+ * cambiar en caliente: es un `const` de módulo del que cuelgan las mallas por
+ * IDENTIDAD, y el fundido de `batch.ts` compara precisamente por identidad.
+ *
  * Los únicos que NO lo usan son los que sí se diferencian: el público
  * (`flatShading` + `instanceColor`), los anillos de zona (`MeshBasicMaterial`,
  * sin iluminación) y los materiales con textura (suelo de líneas, plató).
  */
-export const VOXEL_MATERIAL = new THREE.MeshStandardMaterial({
+export const VOXEL_MATERIAL = new THREE.MeshLambertMaterial({
   vertexColors: true,
-  roughness: 0.92,
-  metalness: 0,
   // Sin flatShading: usamos las normales por cara que ya calculamos, y el
   // degradado de AO se interpola limpiamente. Con flatShading Three.js
   // recalcula la normal con derivadas de pantalla y el resultado es
   // irregular en caras grandes.
   flatShading: false,
+  // Ni `roughness` ni `metalness`: `MeshLambertMaterial` no los tiene, y
+  // pasarlos sólo sacaría un aviso de `Material.setValues` por consola en cada
+  // arranque. Lo que significaban está escrito arriba.
   /*
    * FrontSide (antes DoubleSide).
    *
@@ -590,6 +632,16 @@ export const PIXEL_FONT: Record<string, string> = {
   Y: '10001,10001,01010,00100,00100,00100,00100',
   Z: '11111,00001,00010,00100,01000,10000,11111',
   '-': '00000,00000,00000,11111,00000,00000,00000',
+  /*
+   * La barra del récord ("3/7"), que antes NO EXISTÍA.
+   *
+   * `drawPixelText` cae en `PIXEL_FONT[ch] ?? PIXEL_FONT[' ']` cuando no
+   * encuentra el carácter, así que una "/" ausente se pintaba como un hueco en
+   * blanco: el marcador del techo leía "3 7" en vez de "3/7". Es la misma
+   * diagonal que la "1", con el mismo remate de punta (fila 1 y fila 5
+   * repetidas) que el resto de los dígitos.
+   */
+  '/': '00001,00010,00010,00100,01000,01000,10000',
   '.': '00000,00000,00000,00000,00000,01100,01100',
   ' ': '00000,00000,00000,00000,00000,00000,00000',
 };

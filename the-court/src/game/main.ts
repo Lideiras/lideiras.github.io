@@ -5,17 +5,19 @@ import { Hud } from '../ui/hud';
 import { PanelManager, sectionKey, signKey, statsSource } from '../ui/panels';
 import { Sfx } from './audio';
 import { Ball } from './ball';
-import { buildCourt, buildCourtLines, buildScoreboard } from './builders/court';
-import { animateHuman, buildHuman, poseCelebrate, poseShoot } from './builders/human';
+import { ARENA_LAMPS, buildCourt, buildCourtLines, buildScoreboard } from './builders/court';
+import {
+  RECOGE_TIME, animateHuman, buildHuman, holdPeso, mezclaPeso, poseCelebrate, poseShoot, regateAltura, recogePeso,
+} from './builders/human';
 import { batchStaticMeshes } from './builders/batch';
 import { NET, buildBench, buildHoop, buildScorerTable, buildTunnel, buildZoneRing, createBallMesh } from './builders/props';
 import { PLAYER_RADIUS, buildColliders, resolveCircle } from './collide';
 import { loadModel, normalize } from './assets';
 import { VOXEL_MATERIAL, canvasTexture, noCastShadow } from './builders/util';
-import { buildInterviewSet } from './builders/tv';
+import { animateTvOperator, animateTvReporter, buildInterviewSet } from './builders/tv';
 import {
   BALL, CAMERA,
-  SECTION_CAMERA, HAND_SWITCH_ANGLE, INTERVIEW, PLAYER, RIM, SECTION_IDS, SHOOT_RANGE,
+  SECTION_CAMERA, HAND_SWITCH_ANGLE, INTERVIEW, PLAYER, RIM, SECTION_IDS, SHOOT_JUMP, SHOOT_RANGE,
   ZONES, rimX, type Side, type Zone,
 } from './config';
 import { Input } from './input';
@@ -90,6 +92,171 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const coarse = matchMedia('(pointer: coarse)').matches;
 
+  /*
+   * INTERRUPTORES DE URL.
+   *
+   * Se leen AQUÍ, al principio, y no donde se usan, porque dos de ellos
+   * condicionan cosas que pasan MUCHO antes: `?nolambert=1` decide el material
+   * de todas las mallas del mundo y tiene que estar resuelto antes de hornear
+   * sombras y de precompilar, y `?perf=1` enciende un log que va desde el primer
+   * fotograma. Declararlos aquí y leerlos donde hacen falta evita el
+   * "temporal dead zone" de un `const` declarado más abajo y deja la lista
+   * entera a la vista en un solo sitio.
+   *
+   *  · `?nobatch=1`   — no funde las mallas estáticas (abajo, junto al fundido).
+   *  · `?nopre=1`     — no precompila (abajo, junto a la precarga).
+   *  · `?noprewarm=1` — precompila pero NO dibuja cada vista.
+   *  · `?nolambert=1` — devuelve el voxel a `MeshStandardMaterial`.
+   *  · `?perf=1`      — heartbeat de rendimiento en producción.
+   *
+   * Los tres primeros son SÓLO DESARROLLO, como estaban. `?nolambert=1` también
+   * (es un interruptor de medición, y en producción nadie va a comparar dos
+   * builds). `?perf=1` es el único que se respeta fuera de desarrollo, y porque
+   * en producción NUNCA sale por defecto: la consola de un jugador que no ha
+   * pedido nada no se llena con una línea cada dos segundos.
+   */
+  const parametrosDev = new URLSearchParams(location.search);
+  const sinLambert = import.meta.env.DEV && parametrosDev.has('nolambert');
+  const verPerf = import.meta.env.DEV || parametrosDev.has('perf');
+
+  /*
+   * `?escala=N` SÍ se respeta fuera de desarrollo, como `?perf`.
+   *
+   * Es el interruptor con el que el usuario puede hacer el A/B de la nitidez
+   * inicial en SU máquina sin que nadie tenga que tocar el código ni esperar a
+   * un build nuevo: `?escala=1` para el comportamiento viejo (cascada desde 1,0)
+   * y `?escala=0.7` para el nuevo. Los interruptores de arriba son de
+   * diagnóstico interno —reproducen síntomas que ya están arreglados—; este mide
+   * una decisión que afecta a lo que se ve, y eso hay que poder hacerlo sin
+   * reconstruir.
+   */
+
+  /*
+   * ESCALA DE PARTIDA, Y POR QUÉ NO ES LA DEL `devicePixelRatio`.
+   * =========================================================
+   *
+   * El techo era `min(devicePixelRatio, 1,5 en táctil / 2 en ratón)` y dejaba
+   * que la calidad adaptativa DESCUBRIERA sola lo que la máquina puede. En el
+   * equipo del propietario (Intel HD 4600 de 2012, ANGLE/D3D11) el log da la
+   * cascada 1,0 → 0,9 → 0,8 → 0,7 con una decisión cada ~1,3 s: unos 7 s
+   * entrando con la imagen borrosa, que es lo que se ha reportado más de una vez.
+   *
+   * La cascada no es un fallo —es el mecanismo funcionando, y hace bien su
+   * trabajo: cada peldaño exige TRES decisiones seguidas y luego hay que
+   * aguantar 20 s para reintentar el techo— es una espera. Y se puede ahorrar.
+   *
+   * ────────────────────────────────────────────────────────────────────────────
+   * CÓMO SE AHORRA: MIDIENDO, NO ADIVINANDO
+   * ────────────────────────────────────────────────────────────────────────────
+   *
+   * Hubo aquí una heurística sobre el NOMBRE de la GPU (`hardwareFlojo()`:
+   * reglas sobre "Intel HD Graphics 4000", "Adreno 3xx", "Mali-T7"…). Se ha
+   * QUITADO, y el motivo es que fallaba justo en el caso que importaba:
+   *
+   *   · normalizaba el nombre borrando los grupos entre paréntesis con
+   *     `/\([^)]*\)/g`, y ANGLE **anida** paréntesis: en
+   *     `ANGLE (Intel, Intel(R) HD Graphics 4600 (0x…412), D3D11)` esa
+   *     expresión se come `(Intel, Intel(R)` COMPLETO. La cadena acababa siendo
+   *     `"angle hd graphics 4600 direct3d11 d3d11"`, sin la palabra "intel", y
+   *     ninguna de las cuatro reglas casaba. Log del propietario:
+   *     `escala inicial 1 … sin cambios respecto a antes`, en una tarjeta que
+   *     era exactamente el caso que la heurística buscaba.
+   *   · y, más en general, una lista de nombres es una apuesta sobre el
+   *     hardware que cada usuario tiene. Falla en las dos direcciones y no
+   *     aprende de nada.
+   *
+   * Lo que hay en su lugar es una MEDIDA, y sale gratis: durante la precarga ya
+   * se dibujan las siete vistas para subir los búferes de geometría. Con la
+   * escena ya calentada, un fotograma medido en el encuadre real de juego ES el
+   * coste de régimen de esa máquina, y de ahí sale la escala de partida. Cero
+   * listas, cero falsos positivos, y funciona con el hardware de mañana.
+   *
+   * LO QUE CAMBIA, y es lo único:
+   *
+   *  · el punto de partida (`pixelRatio` al construir el renderer), y
+   *  · el techo, porque `ESCALA_MAX` se deriva de `pixelRatio`.
+   *
+   * NO se toca `ESCALA_MIN`, ni los umbrales de `calidad()`, ni los 45
+   * fotogramas de calentamiento, ni el mecanismo de `techoFallido` y sus
+   * reintentos, ni el muestreo de coste de `frame()`. La calidad adaptativa
+   * sigue teniendo todo el mando: si el hardware identificado como flojo acaba
+   * dando 60 fps de sobra, la escalada sube sola hasta el techo, y si el
+   * hardware desconocido es en realidad flojo, la cascada sigue igual que
+   * antes. Sólo cambia de dónde parte y hasta dónde puede llegar.
+   *
+   * ────────────────────────────────────────────────────────────────────────────
+   * LO QUE EL JUGADOR NOTA (y hay que decirlo, porque no es gratis)
+   * ────────────────────────────────────────────────────────────────────────────
+   *
+   * En ese hardware la imagen entra YA a 0,7 de resolución en lugar de entrar a
+   * 1,0 e irse bajando durante los primeros segundos. Es más borrosa de
+   * entrada, desde el primer fotograma y hasta que la escalada suba. Es
+   * exactamente lo que se ha pedido («tarda en tener fluidez»), y visualmente NO
+   * cambia ni un vértice, ni un color, ni una luz: la misma escena, la misma
+   * cámara y las mismas luces, dibujadas con menos píxeles.
+   *
+   * La escala sale de `elegirEscalaInicial()`, que la MIDE durante la precarga
+   * (ver el bloque de arriba). Antes de este cambio salía aquí de
+   * `devicePixelRatio` y la decidía la cascada; ahora se mide, y `?escala=N`
+   * permite forzarla para comparar a ojo.
+   */
+  const ESCALA_MIN = 0.7;
+
+  interface LecturaGpu {
+    /** Nombre del renderer, o '' si el navegador no lo ha dado. */
+    renderer: string;
+    vendor: string;
+    /** Valores crudos, para poder decir «ENMASCARADO» y enseñar lo que vino. */
+    rendererCrudos: string[];
+    vendorCrudos: string[];
+  }
+
+  /**
+   * Nombre real de la GPU, o la cadena vacía si no se puede saber.
+   *
+   * Se lee UNA vez y la usan dos cosas: la escala de partida de arriba y el
+   * bloque `[gpu]` del final. Vive aquí, y no en el bloque del log, porque la
+   * escala hay que decidirla ANTES de construir nada —si no, el primer fotograma
+   * de la partida se dibuja al escalado viejo y luego baja, que es justo la
+   * cascada que se quiere quitar.
+   *
+   * Las dos vías (extensión y `gl.RENDERER`/`gl.VENDOR`) y el descarte de los
+   * valores que son enums disfrazados están explicados en el bloque del log.
+   */
+  function leerGpu(): LecturaGpu {
+    const g = renderer.getContext();
+    const ext = g.getExtension('WEBGL_debug_renderer_info') as {
+      UNMASKED_RENDERER_WEBGL?: number;
+      UNMASKED_VENDOR_WEBGL?: number;
+    } | null;
+    const param = (p: number | undefined): string => {
+      if (p === undefined) return '';
+      try {
+        const v: unknown = g.getParameter(p);
+        return v === null || v === undefined ? '' : String(v);
+      } catch {
+        return '';
+      }
+    };
+    const esNombre = (s: string): boolean =>
+      s.length > 0 && !/^\d+$/.test(s) && !/^0x[0-9a-f]+$/i.test(s) && s !== 'null' && s !== 'undefined';
+    const rendererCrudos = [param(ext?.UNMASKED_RENDERER_WEBGL), param(g.RENDERER)];
+    const vendorCrudos = [param(ext?.UNMASKED_VENDOR_WEBGL), param(g.VENDOR)];
+    return {
+      renderer: rendererCrudos.find(esNombre) ?? '',
+      vendor: vendorCrudos.find(esNombre) ?? '',
+      rendererCrudos,
+      vendorCrudos,
+    };
+  }
+
+  /*
+   * La decisión en sí va DESPUÉS de crear el renderer, porque leer el nombre de
+   * la GPU es pedirle algo al contexto WebGL. Lo que se declara aquí es sólo lo
+   * que esa decisión usa: el suelo de la calidad adaptativa y las reglas para
+   * reconocer un hardware flojo.
+   */
+
   /**
    * Paleta de cielo y luz, en la línea de Trove: cielo saturado, sol cálido
    * y rebote frío del suelo. Centralizado aquí para que no se repartan
@@ -107,11 +274,61 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
   } as const;
 
   onProgress(0.05);
-  await document.fonts.load('48px "Bebas Neue"').catch(() => undefined);
+  /*
+   * TIPOGRAFÍAS ANTES DE QUE EXISTA NADA QUE LAS USE.
+   *
+   * Antes sólo se esperaba a Bebas Neue, que es la de respaldo para textos
+   * largos. La que de verdad pinta el HUD es Silkscreen, y ésa se quedaba
+   * bajando en segundo plano: el HUD se construía, `layoutLabels()` medía el
+   * `offsetWidth` de los seis rótulos con la tipografía de reserva, y un
+   * fotograma después la de verdad llegaba y **todo el ancho estaba mal**.
+   *
+   * Con eso no sólo las etiquetas salían en el sitio durante un instante: cada
+   * cambio de fuente invalida el texto y obliga al navegador a rehacer el
+   * diseño de la página, y eso es un pico de CPU de varios milisegundos con el
+   * bucle de juego corriendo. Es parte de los "primeros segundos a tirones".
+   */
+  await Promise.all([
+    document.fonts.load('48px "Bebas Neue"'),
+    document.fonts.load('700 16px "Silkscreen"'),
+    document.fonts.load('400 16px "Silkscreen"'),
+  ]).catch(() => undefined);
 
   // ───────── Renderer, escena, cámara, luces
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-  let pixelRatio = Math.min(window.devicePixelRatio, coarse ? 1.5 : 2);
+
+  /*
+   * Y AQUÍ, ya con el contexto, el techo y el punto de partida. Va en este punto,
+   * y no más arriba, por una razón de orden de ejecución y no de gusto: leer el
+   * renderer es una llamada al contexto WebGL, y el contexto no existe hasta
+   * esta línea.
+   *
+   * El punto de partida es el de siempre (`devicePixelRatio` con tope) porque la
+   * decisión de verdad se toma DESPUÉS, con la escena ya construida y calentada:
+   * ver `elegirEscalaInicial()`, que mide un fotograma en el encuadre real de
+   * juego durante la precarga y de ahí sale la escala con la que se entra. Esta
+   * línea sólo pone el techo.
+   */
+  const gpu = leerGpu();
+  const pixelRatioNativo = Math.min(window.devicePixelRatio, coarse ? 1.5 : 2);
+  let pixelRatio = pixelRatioNativo;
+  let motivoEscala = `devicePixelRatio con tope ${coarse ? 1.5 : 2}`;
+  const escalaForzada = parametrosDev.has('escala');
+  if (escalaForzada) {
+    const pedida = Number(parametrosDev.get('escala'));
+    if (Number.isFinite(pedida) && pedida > 0) {
+      pixelRatio = clamp(pedida, 0.5, 3);
+      motivoEscala = `forzada por ?escala=${parametrosDev.get('escala')}`;
+    } else {
+      console.warn(`[gpu] ?escala=${parametrosDev.get('escala')} no es un número mayor que 0; se ignora`);
+    }
+  }
+  console.info(
+    `[gpu] ${gpu.renderer || '(el navegador no ha dado el nombre de la GPU)'} · ` +
+      `escala de partida ${pixelRatio} (${motivoEscala}) · ` +
+      `la definitiva la mide la precarga (elegirEscalaInicial)`,
+  );
+
   renderer.setPixelRatio(pixelRatio);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -176,8 +393,10 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
    *    batería de focos colgada de un lado del techo, no el sol. El sesgo es lo
    *    que se ve en cualquier pabellón y lo que hace que los objetos se lean
    *    apoyados en el suelo en vez de flotando.
-   *  · **Luz muy uniforme**: los cuatro focos de esquina cruzan la pista en
-   *    diagonal y rellenan lo que el central deja a oscuras.
+   *  · **Luz que viene de puntos concretos**: los focos colgantes del techo están
+   *    encima de la pista y la iluminan por conos, no entera. De eso sale el
+   *    contraste entre pista y graderío: lo que está bajo un cono se ve claro y
+   *    las gradas, fuera del alcance de todos, quedan apagadas.
    *  · **Tono cálido** de halogenuro metálico (ámbar pálido), no el azul del
    *    cielo.
    */
@@ -201,13 +420,73 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
    * arquitectura, que no se mueve. El jugador y el balón —lo único que cambia de
    * sitio— llevan su propia sombra de contacto.
    *
-   * Intensidad 2,0, medida y no a ojo: a 2,9 el suelo se quemaba (el tonemapping
-   * comprime las altas luces y el parqué #d9a05b acababa al mismo valor que las
-   * líneas #fdf6e8, así que la pista se leía como una mancha beis sin dibujo).
-   * Con 24° de sesgo el suelo recibe el 91 % de la luz de antes, así que se sube
-   * de 1,9 a 2,0 para dejarlo igual de brillante.
+   * Intensidad 1,30 (era 2,0), medida y no a ojo: a 2,9 el suelo se quemaba (el
+   * tonemapping comprime las altas luces y el parqué #d9a05b acababa al mismo
+   * valor que las líneas #fdf6e8, así que la pista se leía como una mancha beis
+   * sin dibujo). Y ha bajado otra vez al aparecer los conos de la batería, que
+   * son los que iluminan el parqué ahora: con la direccional en 2,0 y los cuatro
+   * focos encima el suelo subió de 2,32 a 3,1 de irradiancia, justo al lado de
+   * aquel valor quemado.
+   *
+   * Lo que se pierde al bajar la direccional es elcontraste de la sombra (sólo
+   * ella proyecta): el mismo punto pasa de 0,23 a ~0,55 de brillo al entrar en
+   * sombra. Es el precio de que la luz del suelo venga de sitios y la sombra
+   * siga viniendo de una sola. Si al verlo en pantalla las sombras se leen
+   * flojas, el ajuste es un número: subir la direccional y bajar `intensidad`
+   * de los focos en la misma proporción, sin tocar nada más.
+   *
+   * OJO: el 1,30 de este bloque ya NO es el valor vivo — se recalibró a 0,80 al
+   * bajar el parqué del hombro de la curva de tonos. Ver el bloque siguiente.
    */
-  const ceiling = new THREE.DirectionalLight(0xfff2dc, 2.0);
+  /*
+   * RECALIBRADO DEL SUELO: POR QUÉ ESTAS TRES INTENSIDADES SON ESTAS.
+   *
+   * Que los charcos de luz "no se ven en el parqué" NO era un fallo de dibujo:
+   * era aritmética. `paintLampPools` (court.ts) pinta el charco como ALBEDO más
+   * claro, y con el suelo en 2,09 de irradiancia el parqué ya salía del tonemapping
+   * en el HOMBRO de la curva: parqué 0,694 lineal x 2,09 = 1,45, y con ACES y
+   * exposición 1,05 eso es ~235/255. El centro del charco, con albedo 0,760,
+   * daba 237. DOS NIVELES de diferencia: un charco "más claro que un suelo ya
+   * quemado" es invisible por construcción, y da igual cuántas veces lo pintes
+   * mientras la dirección sea "más claro".
+   *
+   * Así que el arreglo es de dos partes y las dos hacen falta: bajar la
+   * irradiancia del suelo para devolverle RECORRIDO a la curva, y dar al charco
+   * un anillo OSCURO (court.ts), no sólo un centro claro.
+   *
+   * Irradiancia sobre el parqué, luz por luz (la de los focos es
+   * 12 / 11,92^1,2, sin cambios; el resto baja):
+   *
+   *                    antes                              ahora
+   *   techo      1,30 x dot 0,904 = 1,175   ->   0,80 x 0,904 = 0,723
+   *   2 focos     12 / 11,92^1,2     = 0,500   ->   (intactos)  = 0,500
+   *   relleno     0,50 x dot 0,22  = 0,110   ->   0,40 x 0,22  = 0,088
+   *   hemisférica 0,30                 = 0,300   ->   0,22         = 0,220
+   *   ------------------------------------------------------
+   *   TOTAL                            2,085                   1,531
+   *
+   * El reparto lo manda la cenital: era el 56 % del total y la que aplanaba el
+   * suelo, y en un pabellón la pista la iluminan los focos, no una direccional
+   * vertical. El relleno y la hemisférica bajan poco y en la dirección correcta
+   * (el relleno es el que alisa el lado visible de las caras). Los dos focos se
+   * quedan intactos: son el componente "pabellón" y el charco va debajo.
+   *
+   * Resultado, con el albedo del parqué (0,694 lineal) y el del anillo pintado:
+   *
+   *     parqué normal   1,531 x 0,694 = 1,06  -> ACES -> 230/255
+   *     centro charco   1,531 x 0,778 = 1,19  -> ACES -> 233/255
+   *     anillo oscuro   1,531 x 0,346 = 0,53  -> ACES -> 202/255
+   *
+   * Centro contra anillo: 31 niveles, que es lo que hace que las zonas
+   * iluminadas se lean como PUNTOS. Nótese que subir el alfa del centro ya no
+   * compra casi nada (0,28 -> 0,38 delata un nivel): es el hombro de la curva, y
+   * por eso el recorrido se gana abajo, en el anillo.
+   *
+   * `toneMappingExposure` NO se toca (sigue en 1,05): bajarla apagaría también el
+   * plató y las gradas y se perdería el contraste de pabellón. La exposición es
+   * el último recurso, no la solución.
+   */
+  const ceiling = new THREE.DirectionalLight(0xfff2dc, 0.8);
   ceiling.position.set(10, 34, 12);
   ceiling.castShadow = true;
   ceiling.shadow.mapSize.set(coarse ? 1024 : 2048, coarse ? 1024 : 2048);
@@ -262,25 +541,46 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
   ceiling.shadow.normalBias = 0.05;
   scene.add(ceiling);
 
-  // Cuatro baterías desde las torres de las esquinas, cruzando la pista en
-  // diagonal. Sin sombras: ya las pone el foco central y cuatro mapas más
-  // costarían carísimo. Aquí sólo aportan el relleno direccional del pabellón.
-  const towers: THREE.DirectionalLight[] = [];
-  for (const sx of [-1, 1]) {
-    for (const sz of [-1, 1]) {
-      const tower = new THREE.DirectionalLight(0xfff6e4, 0.7);
-      tower.position.set(sx * 26, 15, sz * 18);
-      tower.target.position.set(-sx * 5, 0, -sz * 2.5);
-      scene.add(tower, tower.target);
-      towers.push(tower);
-    }
-  }
+  /*
+   * Las cuatro baterías direccionales de las torres se han ELIMINADO (ver el
+   * bloque de los focos, más abajo). Sus dos sustitutos eran: conos reales en los
+   * focos colgantes y menos nivel en todo lo demás. El hueco de las esquinas es
+   * intencionado —una direccional desde (±26, 15, ±18) ilumina el perímetro igual
+   * que la pista y lo que deja es EXACTAMENTE el graderío apagado—.
+   */
 
-  // Rebote cálido del parqué: el pabellón devuelve mucha luz del suelo, y sin
-  // esto las caras inferiores de los modelos quedan muertas.
-  const bounce = new THREE.DirectionalLight(0xffd9a8, 0.45);
-  bounce.position.set(-6, -12, -4);
-  scene.add(bounce);
+  /*
+   * LA DIRECCIONAL DE REBOTE SE HA ELIMINADO (fase 3: ocho luces -> cinco).
+   *
+   * Era una direccional cálida (0xffd9a8, 0,45) desde (-6, -12, -4), o sea desde
+   * ABAJO, para que las caras inferiores de los modelos no quedaran muertas.
+   * Se quita porque es una luz ENTERA que se evalúa en cada fragmento de cada
+   * malla, y su trabajo está cubierto por dos cosas que ya existían y no cuestan
+   * nada por fragmento:
+   *
+   *  · **El rebote del parqué ya está PINTADO.** `paintLampPools` (court.ts,
+   *    `drawFloor`) escribe los charcos de los doce focos en la textura del
+   *    suelo, así que la lectura de "luz que sale de puntos concretos y vuelve
+   *    del suelo" está en la textura, no en una luz.
+   *  · **La hemisférica ES un rebote difuso.** En Three.js la hemisférica
+   *    mezcla cielo (0xfff4d6) y suelo (0x3a4668) según la normal de la cara:
+   *    cualquier cara que mire hacia abajo recibe el color de suelo, que es
+   *    exactamente el rebote del parqué. Bajarla era la palanca del contraste;
+   *    quitarla sería tirar esa palanca, y aquí no hace falta: la hemisférica
+   *    se queda en 0,30.
+   *
+   * NO compensa nada: ni se sube la hemisférica ni el relleno, porque ajustar
+   * intensidades a ojo sin tener la imagen delante es exactamente el tipo de
+   * ajuste que después nadie sabe por qué está. Si al verlo en pantalla la
+   * escena queda más apagada, el sitio correcto es la exposición global
+   * (`renderer.toneMappingExposure`, arriba), que es UN número y no cinco.
+   *
+   * Lo que se pierde, y se acepta: el tinte cálido 0xffd9a8 en las caras
+   * inferiores, que la hemisférica sustituye con un azul más frío. Y una
+   * comodidad: no proyectaba (`castShadow` por defecto en `false`), así que el
+   * mapa de sombras horneado sigue siendo EXACTAMENTE el mismo y no hay que
+   * rehornear nada por este cambio.
+   */
 
   /*
    * Relleno frío, casi horizontal, y DEL LADO DE LA CÁMARA.
@@ -294,24 +594,208 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
    * Por eso va en (10, 5, 18): delante del jugador, algo a la derecha y bajo,
    * que es de donde llega la luz en un pabellón real (los focos de la grada
    * opuesta) y no un foco plano pegado al objetivo.
+   *
+   * Intensidad 0,50 -> 0,40 con el recalibrado del suelo (arriba). Baja poco y
+   * en la dirección correcta: el relleno es el que alisa el lado visible de las
+   * caras, así que es parte del suelo que aplana. Si el parqué se viera apagado,
+   * el sitio a recuperar es ESTE número, no el de la cenital (que es el 56 % del
+   * total) ni la exposición.
    */
-  const fill = new THREE.DirectionalLight(0xbfd4ff, 0.62);
+  const fill = new THREE.DirectionalLight(0xbfd4ff, 0.4);
   fill.position.set(10, 5, 18);
   scene.add(fill);
 
-  // Hemisférica: el rebote difuso de gradas y parqué. Subida de 0,15 a 0,55.
+  // Hemisférica: el rebote difuso de gradas y parqué.
   //
   // Sigue siendo baja para que el pabellón se lea como cubierto, pero a 0,15
   // las caras que no ven el techo quedaban planas y sin color.
-  // Bajada de 0,55 a 0,38: con el foco clave ya sesgado, la hemisférica alta
-  // planchaba las sombras que se acaban de recuperar.
-  const hemi = new THREE.HemisphereLight(0xfff4d6, 0x3a4668, 0.38);
+  // Bajada de 0,55 a 0,38 con el foco clave ya sesgado, porque una hemisférica
+  // alta plancha las sombras; y de 0,38 a 0,30 al aparecer los conos de la
+  // batería: la hemisférica es la única luz que llega IGUAL a la pista y a las
+  // gradas, así que es justo la que hay que bajar para que el contraste entre
+  // ambas se abra.
+  // Y de 0,30 a 0,22 con el recalibrado del suelo (arriba), por la misma razón y
+  // en el mismo sentido: bajar el suelo es lo que le devuelve recorrido a la
+  // curva de tonos, y bajar la luz que llega igual a pista y a gradas es lo que
+  // abre el contraste entre ambas.
+  const hemi = new THREE.HemisphereLight(0xfff4d6, 0x3a4668, 0.22);
   scene.add(hemi);
 
+  /*
+   * ILUMINACIÓN DE PABELLÓN, FASE 2: LOS FOCOS APORTAN LUZ DE VERDAD.
+   *
+   * Antes de este cambio los doce focos colgantes eran un color de vértice sobre
+   * `VOXEL_MATERIAL`: un bloque más del techo. Se veían apagados y, apagando o
+   * quitando la batería, la imagen no cambiaba en ningún pixel. Ahora la batería
+   * es lo que ilumina la pista y el resto del rig se recorta para pagarle el
+   * sitio. El recuento de luces NO ha subido en esta fase: sigue habiendo 8.
+   * (La fase 3, más abajo, los baja a 5: aquí se describe el estado intermedio
+   * en el que se decidió qué es lo que la batería tenía que sustituir.)
+   *
+   * Antes (8): 1 direccional de techo con sombra + 4 direccionales de torre
+   *            + rebote + relleno + hemisférica.
+   * Ahora(8): 1 direccional de techo con sombra + 4 `SpotLight` de la batería
+   *            + rebote + relleno + hemisférica.
+   *
+   * Lo que se recorta y por qué:
+   *
+   *  · **Las cuatro direccionales de torre, enteras.** Eran 0,7 cada una desde
+   *    (±26, 15, ±18) apuntando al centro, y hacían un trabajo que los focos
+   *    colgantes hacen mejor y más caro de replicar: una direccional ilumina
+   *    TODO igual, pista y gradas, que es justo lo contrario de un pabellón. Se
+   *    sustituyen una a una por conos reales, así que el número de luces es el
+   *    mismo y el coste por fragmento también (7 luces puntuales en ambos casos).
+   *  · **La direccional de techo, de 2,0 a 1,30.** Sigue siendo la llave y la
+   *    ÚNICA que proyecta sombra (el mapa se hornea una vez: cuatro mapas más
+   *    serían cuatro horneados), pero deja de ser la que ilumina el suelo, que
+   *    ahora es tarea de los conos. Sin esto el parqué se quemaría: con 2,9 de
+   *    direccional el tonemapping comprimía el suelo y las líneas de pista al
+   *    mismo valor (ver el comentario de más abajo) y la pista se leía como una
+   *    mancha beis.
+   *  · **Relleno 0,62 -> 0,50 y hemisférica 0,38 -> 0,30.** Las dos estaban
+   *    calibradas contra un suelo que llevaba toda la luz; bajarlas mantiene el
+   *    contraste pista-fondo y evita que el relleno se coma el charco de los
+   *    focos en la banda lateral. El rebote (0,45) se quedaba igual en esta
+   *    fase: va desde abajo y no toca el suelo, así que no competía por el mismo
+   *    nivel. La fase 3 de más abajo lo elimina entera.
+   */
+  /*
+   * ILUMINACIÓN DE PABELLÓN, FASE 3: DE OCHO LUCES A CINCO.
+   *
+   * MOTIVO, medido en la máquina del dueño con el voxel ya en
+   * `MeshLambertMaterial` y las ocho luces de la fase 2: el fotograma se ajusta
+   * casi exactamente a
+   *
+   *     t = 7,2 ms (fijo: CPU + vértices) + 28,2 ms × escala²
+   *
+   * o sea 35,4 ms a escala 1,0 · 30,5 a 0,9 · 26,4 a 0,8 · ~21 a 0,7 (medido:
+   * 35,4 / 30,5 / 26,4 / ~21, que es la curva entera). Veintiocho de los
+   * treinta y cinco milisegundos son COSTE POR PÍXEL, y para llegar a 16,7 ms
+   * harían falta escala 0,58: por debajo del suelo de `ESCALA_MIN` (0,7), o
+   * sea que con ocho luces esta máquina no llega a 60 fps ni a resolución
+   * mínima. No es un fallo de la calidad adaptativa: en un shader forward la
+   * lista de luces se recorre en CADA fragmento de CADA malla, y eso no lo
+   * arregla bajar la resolución.
+   *
+   * Cuantas menos luces, menos coste por fragmento, y el reparto sale
+   * proporcional: con cinco luces la cuenta da `t = 7,2 + 19·s²`, o sea 60 fps
+   * justo en el suelo de 0,7. Ese es todo el motivo del cambio; la exposición,
+   * los umbrales de `calidad()` y `ESCALA_MIN`/`ESCALA_MAX` NO se tocan.
+   *
+   * EL RECUENTO PASA DE 8 A 5:
+   *
+   *   Antes (8): techo con sombra + 4 `SpotLight` + rebote + relleno
+   *              + hemisférica.
+   *   Ahora (5): techo con sombra + 2 `SpotLight` + relleno + hemisférica.
+   *
+   * Lo que se quita:
+   *
+   *  · **La direccional de rebote, entera** (arriba está el porqué de que no
+   *    eche de menos: los charcos pintados en el parqué y la hemisférica).
+   *  · **Dos de los cuatro `SpotLight`**, los de la fila `z = -8,5`. Se quedan
+   *    los dos de `z = +2,5` (x = ±3,2) y el porqué está en el filtro, abajo.
+   *
+   * Lo que NO cambia: los doce paneles del techo siguen siendo emisivos y los
+   * doce charcos siguen pintados en el parqué (todo eso es court.ts y no se
+   * toca), así que la lectura de "pabellón iluminado por puntos" se conserva
+   * entera aunque sólo dos de los doce proyecten un cono real.
+   */
+  /*
+   * LOS DOS FOCOS QUE SE QUEDAN: los de la fila `z = +2,5`, o sea los dos más
+   * cercanos a la cámara de juego.
+   *
+   * La cámara de juego va SIEMPRE en +Z mirando a -Z (`CAMERA.offset =
+   * [0, 12,4, 10,2]`), así que "la fila del lado de la cámara" es `z > 0` y el
+   * filtro es la regla del juego, no un número escrito a mano.
+   *
+   * Por qué esos dos:
+   *
+   *  · **Su charco cae en la franja que encuadra la cámara.** El objetivo de la
+   *    cámara está acotado a `CAMERA.minZ = -4` … `CAMERA.maxZ = 5` (config.ts):
+   *    la banda central de la pista por la que pasa el juego y en la que la
+   *    cámara se centra. El charco de `z = +2,5` cae dentro de esa banda y es el
+   *    que alumbra donde están los pies del jugador y el balón; el de
+   *    `z = -8,5` queda 4,5 m por detrás de su borde más lejano.
+   *  · **Es el que más se ve.** Con la cámara a 12,4 m de altura y 32° de fov
+   *    mirando a unos 49° de caída, el charco de `z = +2,5` cae en la mitad baja
+   *    del encuadre, que es la parte más grande de la pantalla: ahí un cono
+   *    quitado se nota, y el fondo lejano es grada, que tiene que quedarse
+   *    oscuro.
+   *  · **Se quita una pareja, no media batería.** Los dos que quedan son uno a
+   *    cada lado del eje de la pista, así que la imagen conserva el mismo
+   *    reparto izquierda/derecha que antes; si se hubieran quitado los dos del
+   *    mismo lado, el otro se quedaría sin pareja.
+   *
+   * Lo que pasa con la fila que se va: NO se queda sin luz. El cono de un foco
+   * a 11,92 m con 49° de semángulo abarca ±14 m de radio, y el punto de la fila
+   * eliminada más cercano a la que se queda está a 11 m de ella, o sea a 42,7°
+   * del eje del cono: DENTRO. Le llega el derrame del otro cono, atenuado por la
+   * penumbra (0,7) y por la ventana de `distance`, y encima sigue el charco
+   * PINTADO en la textura del suelo y el panel emisivo encendido. El fondo
+   * pierde intensidad de foco, no su lectura.
+   *
+   * Las intensidades NO se suben para compensar los dos focos que se van (12 se
+   * queda en 12): ver el bloque de la direccional de rebote más arriba.
+   */
+  const focos: THREE.SpotLight[] = [];
+  for (const lamp of ARENA_LAMPS.filter((l) => l.z > 0)) {
+    /*
+     * PARÁMETROS DEL CONO, y de dónde sale cada número.
+     *
+     * En Three.js las luces puntuales son FÍSICAS: la irradiancia que llega a un
+     * fragmento es `intensidad / d^decay`, atenuada por la ventana de `distance`.
+     * Con el foco a 11,92 m del parqué y `decay` 1,2, el suelo justo debajo recibe
+     * `12 / 11,92^1,2 = 0,49` por unidad de intensidad (la ventana de `distance`
+     * apenas toca: (1-(11,92/30)^4)^2 = 0,94). Con `intensidad = 12` el charco
+     * del centro del círculo vale ~5,9 y en el borde de la pista, a 16 m, ~3,4:
+     * o sea, el cono NO aporta un nivel uniforme y por eso se ven los charcos.
+     *
+     *  · `angle` 0,85 rad (~49°): el suelo del cono abarca ±14 m desde el foco.
+     *    Con 0,55 (el valor habitual) serían ±7,6 m y quedaría un agujero oscuro
+     *    entre conos en mitad de la pista, que es justo lo que hay que evitar.
+     *  · `penumbra` 0,7: el 30 % interior del cono va a plena intensidad y el 70 %
+     *    exterior se funde. Con los conos solapándose, una penumbra alta es lo
+     *    que los cose entre sí y quita el corte de disco.
+     *  · `distance` 30: la ventana `(1-(d/30)^4)^2` deja el primer peldaño de la
+     *    grada (x = ±16,2, a 17,5 m del foco) con menos del 2 % del cono, así que
+     *    las gradas se quedan oscuras aunque el cono llegue. ES EL QUE CONVIRTE
+     *    "pista iluminada" en "pabellón", no la intensidad.
+     *  · `castShadow` NO se activa, y no por pereza: el mapa de sombras es
+     *    estático y se hornea UNA vez al final de la carga, así que un foco con
+     *    sombra serían dos mapas más que hornear y hornearlos cada frame era
+     *    justo lo que costó 173 draw calls por fotograma (ver el mapa de sombras).
+     *    Los focos son proyectantes que no se mueven, así que un día se podrían
+     *    hornear de verdad; hoy no cabe en el presupuesto. QUITAR focos no cambia
+     *    esto: ninguno proyectaba, de modo que el mapa horneado sigue siendo
+     *    exactamente el mismo y no hay que rehornear nada por este cambio.
+     */
+    const foco = new THREE.SpotLight(0xffe3b8, 12, 30, 0.85, 0.7, 1.2);
+    foco.position.set(lamp.x, lamp.y, lamp.z);
+    // Vertical: los focos cuelgan rectos del techo y apuntan al suelo. Inclinarlos
+    // concentraría el charco en el centro de la pista y dejaría las bandas
+    // laterales a oscuras, que es justo lo que hay que evitar.
+    foco.target.position.set(lamp.x, 0, lamp.z);
+    foco.castShadow = false;
+    scene.add(foco, foco.target);
+    focos.push(foco);
+  }
+
+  /*
+   * EL RECUENTO SE CUENTA, NO SE ESCRIBE.
+   *
+   * El número de luces que evalúa el shader forward es la suma de las que hay en
+   * la escena, así que sale de los objetos: techo + relleno + hemisférica + los
+   * focos. Si algún día se quita o se añade una luz sin tocar esta línea, el
+   * log seguiría diciendo la verdad.
+   */
+  const lucesTotales = focos.length + 3; // techo + relleno + hemisférica
   console.info(
-    `[lights] PABELLON -> techo=${ceiling.intensity} (sombras ${ceiling.castShadow}) ` +
-    `torres=${towers.length}x${towers[0]?.intensity} rebote=${bounce.intensity} ` +
-    `relleno=${fill.intensity} hemisferica=${hemi.intensity} sol=ELIMINADO`,
+    `[lights] PABELLON-v3 -> ${lucesTotales} luces: techo=${ceiling.intensity} (sombras ${ceiling.castShadow}) ` +
+      `focos=${focos.length}x${focos[0]?.intensity} ang=${focos[0]?.angle} (fila z>0) ` +
+      `relleno=${fill.intensity} hemisferica=${hemi.intensity} · ` +
+      `suelo≈1,53 (antes 2,09): techo 0,723 + focos 0,500 + relleno 0,088 + hemi 0,220 · ` +
+      `ACES+1,05: parquet ~230/255, centro-charco ~233, anillo-oscuro ~202 (31 niveles) · ` +
+      `rebote-direccional=ELIMINADO (charcos pintados + hemisférica) torres-direccionales=ELIMINADAS sol=ELIMINADO`,
   );
   onProgress(0.2);
   await nextFrame();
@@ -358,7 +842,13 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
   const scorerTable = buildScorerTable();
   // Marcador colgado del techo, sobre el centro de la pista. Su estructura entra
   // en el fundido del arranque; las dos pantallas (un material con textura) no.
-  const scoreboard = buildScoreboard();
+  //
+  // La anisotropía máxima se le pasa AQUÍ y no dentro del constructor porque la
+  // necesita el renderer, que no existe fuera de esta función: la textura del
+  // marcador se quedaba sin `anisotropy` (1 por defecto) y se veía cortada en
+  // escorzo, con las esquinas de los dígitos comidas justo en el ángulo desde el
+  // que más se mira: el encuadre de juego, que mira el tablero de abajo.
+  const scoreboard = buildScoreboard(renderer.capabilities.getMaxAnisotropy());
   scene.add(hoopL, hoopR, benchProp, tunnelProp, scorerTable, scoreboard);
   const set = buildInterviewSet();
   scene.add(set.group);
@@ -426,8 +916,18 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
         shakeNet();
         onScore(side);
       },
-      rim: () => sfx.rim(),
-      board: () => sfx.board(),
+      // El aro y el tablero también mueven la red (punto F): hasta ahora sólo se
+      // agitaba al ENCAR, y lo demás era golpear el hierro y no pasar nada. Con
+      // amplitudes mucho menores y una caída más rápida, porque un roce no es
+      // una canasta: 4,5 y 3 en lugar de 1, y decaen en un tercio de segundo.
+      rim: () => {
+        bumpNet(0.45);
+        sfx.rim();
+      },
+      board: () => {
+        bumpNet(0.3);
+        sfx.board();
+      },
       bounce: (v) => sfx.bounce(v),
     },
     // Los volúmenes de la pista: el balón rebota en las vallas, el banquillo, la
@@ -476,11 +976,24 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
    * Amplitud 1 al anotar y decae en medio segundo; el tiempo lo pone el reloj de
    * la escena. Con `prefers-reduced-motion` el reloj vale 0, así que la red se
    * queda quieta sin necesidad de una rama aparte.
+   *
+   * `bumpNet` es la versión suave para el aro y el tablero: sube la amplitud SÓLO
+   * si es mayor que la que ya había (un gol y un roce en el mismo fotograma se
+   * quedan con el gol) y fija una caída más rápida, que es lo que distingue
+   * «se movió» de «se sacudió».
    */
   let netAmp = 0;
+  let netDecay = 2.2; // unidades de amplitud por segundo
   const shakeNet = (): void => {
     netAmp = 1;
+    netDecay = 2.2;
     NET.amp.value = 1;
+  };
+  const bumpNet = (amp: number): void => {
+    if (amp <= netAmp) return;
+    netAmp = amp;
+    netDecay = 5.5;
+    NET.amp.value = amp;
   };
 
   // ───────── UI y estado
@@ -721,15 +1234,32 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
     );
     ball.launch(from, new THREE.Vector3(v.x, v.y, v.z));
     sfx.release();
-    flick = 0.35;
+    flick = FLICK_TIME;
     // Salta DESPUÉS de solvear la trayectoria: como el tiro se solvea desde un
     // `y` fijo, el orden no altera el resultado, pero deja claro que el salto
     // es la reacción al gesto y no parte del cálculo de la bandeja.
     launchJump(jump);
-    if (perfect) hud.toast(t('shot_perfect'), 1200);
+    if (perfect) {
+      hud.toast(t('shot_perfect'), 1200);
+      // El "PERFECTO" también en el marcador del techo (P7). Dos cifras de
+      // 2,1 m a 5,7 m son las que todo el mundo ve, y no salen del HUD porque el
+      // HUD no se mira: el texto tapa el récord un segundo y vuelve solo.
+      scoreboard.flash(t('shot_perfect'), 1200);
+    }
   }
 
   const tmp = new THREE.Vector3();
+  /**
+   * A dónde va el balón mientras está en las manos, y de dónde sale.
+   *
+   * `meta` es el destino de este fotograma (regate o pecho) y `recogeDesde` es
+   * la posición REAL desde la que se recogió el balón, con la altura que
+   * tenía: en el suelo, a media altura o donde fuera. Entre las dos se interpola
+   * con el peso de la ventana de recogida, de modo que el balón SUBE hasta la
+   * posición de manos en 0,3 s en vez de teletransportarse en un fotograma.
+   */
+  const meta = new THREE.Vector3();
+  const recogeDesde = new THREE.Vector3();
   function placeHeldBall(time: number, speed01: number): void {
     const f = tmp.set(Math.sin(rotY), 0, Math.cos(rotY));
     const side = { x: Math.cos(rotY), z: -Math.sin(rotY) }; // +X local del jugador
@@ -759,9 +1289,13 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
        * desplaza al otro lado de la silueta en el mismo instante, que es lo que
        * hace legible el cambio. Y el bote va con él, desfasado media fase, para
        * que la mano que conduce se lea.
+       *
+       * La fase sale de `regateAltura` (en `human.ts`), que es la MISMA función
+       * que consume `animateHuman` para el brazo: la fase es COMPARTIDA, no dos copias
+       * del `sin(time * 11)` que acabarían desfasadas el día que se toque uno.
        */
       const rebote = 0.16 + speed01 * 0.6;
-      y = 0.14 + Math.abs(Math.sin(time * 11 + (handSide < 0 ? Math.PI : 0))) * rebote;
+      y = 0.14 + regateAltura(time, handSide) * rebote;
       x += f.x * 0.45 + side.x * 0.3 * handSide;
       z += f.z * 0.45 + side.z * 0.3 * handSide;
     } else {
@@ -773,8 +1307,61 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
       x += f.x * 0.52;
       z += f.z * 0.52;
     }
-    ball.pos.set(x, y, z);
+    meta.set(x, y, z);
+    /*
+     * SUBIDA DEL BALÓN. Fuera de la ventana de recogida el balón va directa a
+     * la posición de manos (que es donde estaba ya); dentro, interpola desde
+     * el punto real de recogida. El peso es el mismo `holdPeso` que mezcla los
+     * brazos contra el pecho, así que balón y brazos llegan a la vez.
+     */
+    const w = holdPeso(recogeT);
+    if (w < 1) ball.pos.lerpVectors(recogeDesde, meta, w);
+    else ball.pos.copy(meta);
     ball.object.position.copy(ball.pos);
+  }
+
+  /*
+   * SPIN DEL BALÓN (punto P3).
+   *
+   * El balón ya se desplazaba girando con dos sumas de Euler dentro de
+   * `ball.step`, que depended del frame rate y no rodaba de verdad. Aquí se
+   * sustituye por la rotación que sí es física: el eje es el del RODAMIENTO,
+   * `up × velocidad` (horizontal, perpendicular a la marcha), y el ángulo es
+   * `v / R` por segundo, que es la velocidad angular de una esfera que rueda sin
+   * deslizar. Con el radio visual de 0,204 m, un balón que sale del tiro a 12 m/s
+   * da 59 rad/s: las bandas de la corteza giran como giran.
+   *
+   * En el aire se gira algo menos (factor 0,55): un balón lanzado lleva efecto,
+   * no rodadura, y con la misma velocidad el giro a ojo sería dos veces más
+   * rápido de lo creíble.
+   *
+   * Coste: un cuaternión por fotograma y NADA más — ni una matriz, ni una draw
+   * call, ni un cambio de estado. Se aplica SOBRE la orientación, no acumulando:
+   * se parte de identidad en cada fotograma, que es lo que hace determinista el
+   * giro (si no, se sumaría sobre lo que escribiera `ball.step`).
+   */
+  const spinAxis = new THREE.Vector3();
+  const spinQ = new THREE.Quaternion();
+  function spinBall(dt: number): void {
+    const vx = ball.vel.x;
+    const vz = ball.vel.z;
+    const plano = Math.hypot(vx, vz);
+    if (plano < 0.05) return; // quieto o falling de cabeza: no hay eje
+    // `up × v` con `up` = (0, 1, 0): da (vz, 0, -vx), que es el eje de rodamiento.
+    spinAxis.set(vz, 0, -vx).normalize();
+    const rodando = ball.pos.y <= BALL.radius + 0.02;
+    const rad = plano / (BALL.radius * BALL.visualScale) * (rodando ? 1 : 0.55);
+    spinQ.setFromAxisAngle(spinAxis, rad * dt);
+    /*
+     * Se multiplica SOBRE la orientación que ya hay, y no desde la identidad.
+     *
+     * Con `identity()` delante el cuaternión resultante era el giro de UN solo
+     * fotograma, y como el siguiente volvía a partir de cero el balón no giraba:
+     * alternaba unos 56° de inclinación en cada fotograma, que a ojo es ruido.
+     * El giro de una esfera es acumulativo por definición: se compone.
+     * `ball.step` ya no escribe rotación (ver el comentario de `Ball.step`).
+     */
+    ballMesh.quaternion.premultiply(spinQ);
   }
 
   // ───────── Cámara
@@ -801,6 +1388,50 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
   let camTime = 0;
   let land = 0;
   let wasGrounded = true;
+  /*
+   * Estados de un solo disparo que la animación consume y va apagando. Son tres
+   * flotantes, cero trabajo por fotograma cuando valen 0, y son la forma de
+   * meter reacciones (mirar al cambiar de mano, encogerse al fallar, agacharse a
+   * recoger) sin tocar la firma de `animateHuman` ni sus valores por defecto.
+   */
+  let giro = 0; // -1..1, cabeza al cambiar de mano
+  let frustracion = 0; // 0..1, hombros caídos tras fallar
+
+  /*
+   * VENTANA DE RECOGIDA (0..RECOGE_TIME) y PESOS DE CAPA DE POSE.
+   *
+   * Antes `recoge` era un flotante que se ponía a 1 en el fotograma en que se
+   * recogía el balón y se apagaba solo: eso metía de golpe 0,55 rad en los
+   * brazos, y el mismo `if/else` de `animateHuman` sacaba al personaje de la
+   * rama de braceo a la de pecho en un solo fotograma (0,9 rad). Con la ventana,
+   * `recogeT` es el TIEMPO dentro de la recogida y los pesos salen de las
+   * curvas de `human.ts`, que empiezan y acaban en 0: el gesto entra y sale
+   * sin escalón.
+   *
+   * `holdW`, `tiroW` y `celeW` son los pesos con los que se MEZCLAN las poses
+   * sobre la base. Se mueven con `mezclaPeso` (exponencial, independiente del
+   * `dt`), nunca de golpe: por eso empezar o soltar la carga del tiro y entrar
+   * o salir de la celebración tampoco son saltos.
+   *
+   * Fuera de la ventana de recogida, `holdW` sigue al estado del balón con
+   * `HOLD_TASA`: 8 1/s son 0,11 rad de brazo por fotograma como mucho, la mitad
+   * del braceo normal.
+   */
+  let recogeT = RECOGE_TIME; // arranca ya "recogido": el balón empieza en las manos
+  let holdW = 1;
+  let tiroW = 0;
+  let celeW = 0;
+  /** Duración del seguimiento de brazos del tiro, en segundos. */
+  const FLICK_TIME = 0.35;
+  /** Duración de la celebración tras anotar, en segundos. */
+  const CELEBRATION_TIME = 1.6;
+  /** Tasa de entrada/salida de la pose de "balón en las manos", en 1/s. */
+  const HOLD_TASA = 8;
+
+  /** Cuánto de regate hay: 0 con el balón contra el pecho, 1 a tope. */
+  const REGATE_ON = 0.02; // mismo umbral que usa `placeHeldBall`
+  const REGATE_FULL = 0.2;
+  const regate01 = (sp: number): number => clamp((sp - REGATE_ON) / (REGATE_FULL - REGATE_ON), 0, 1);
 
   function updateCamera(dt: number, snap = false): void {
     if (import.meta.env.DEV && dbg.freeze) return;
@@ -904,10 +1535,78 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
    *
    * El suelo es 0,7 (no 1) porque es precisamente en un rasterizador por software
    * donde hace falta: en la GPU del propietario esto no se activa nunca.
+   *
+   * ─────────────────────────────────────────────────────────────────────────────
+   * NADA DE ESO ERA SUFICIENTE: LOS 204 ms QUE MEDÍA EL USUARIO
+   * ─────────────────────────────────────────────────────────────────────────────
+   *
+   * La consola decía, textual:
+   *
+   *   [calidad] fotograma 37.0 ms con coste 204.3 ms -> escala 0.9
+   *   [calidad] fotograma 33.8 ms con coste 204.3 ms -> escala 0.8
+   *   [calidad] fotograma 26.8 ms con coste 204.3 ms -> escala 0.7
+   *
+   * Dos fallos encadenados, y ninguno era "la GPU va lenta":
+   *
+   *  1. **La medida incluía la COLA, no el fotograma.** El reloj arrancaba
+   *     ANTES de `renderer.render()` y se paraba en el `readPixels` de 1 px, que
+   *     fuerza el vaciado de TODO lo pendiente. En el arranque, lo pendiente
+   *     eran las siete vistas de la precompilación, la subida de texturas y el
+   *     horneado de sombras: la factura de la CARGA, no la del dibujo de ese
+   *     fotograma. Y como el `readPixels` de drenaje pone el reloj a cero, ese
+   *     204,3 se reutilizaba tal cual durante los siguientes 120 fotogramas —
+   *     por eso sale el mismo número en las tres líneas.
+   *  2. **Un solo muestreo fijaba el techo de la sesión.** `techoFallido` se
+   *     bajaba en la primera decisión y la recuperación quedaba topada por
+   *     `techoFallido - 0.05` PARA SIEMPRE: con `max: 1` y `min: 0.7`, después
+   *     de esa medición el juego no podía pasar de 0,75 aunque la GPU llevara
+   *     diez segundos libre.
+   *
+   * Lo de aquí abajo arregla los dos: el drenaje va ANTES del reloj (y la
+   * medida se repite en cuanto cambia la escala, para que el número sea de la
+   * escala nueva), y mover el techo exige N decisiones CONSECUTIVAS por encima
+   * del umbral. El techo tampoco es ya una sentencia: tras un rato estable a
+   * 60 fps se permite reintentar un peldaño más alto, con tope de reintentos.
+   */
+  /*
+   * El techo es el escalado con el que se ha ARRANCADO, que ya puede venir
+   * bajado si la GPU es de las flojas (ver `ESCALA_HARDWARE_FLOJO` arriba): con
+   * hardware flojo la escalada adaptativa no tiene adónde subir por encima de
+   * 0,7, y no por una regra interna sino porque ese es el punto de partida que
+   * se le ha dado. El suelo (`ESCALA_MIN`) se declara arriba, junto a la decisión
+   * que lo usa, porque de esa decisión depende.
    */
   const ESCALA_MAX = pixelRatio;
-  const ESCALA_MIN = 0.7;
-  let techoFallido = ESCALA_MAX; // la mayor escala que NO dio 60 fps: no se reintenta
+  /**
+   * Decisiones CONSECUTIVAS por encima del umbral antes de mover el techo.
+   *
+   * Tres es el mínimo útil: con uno, el arranque ruidoso fijaba la escala para
+   * el resto de la partida. Con tres, un pico aislado (una compilación que se
+   * coló, una pestaña que se puso en segundo plano) no baja nada, y una bajada
+   * de verdad —que dura segundos— sigue entrando en tres decisiones.
+   */
+  const FALLOS_NECESARIOS = 3;
+  /** Segundos seguidos a 60 fps antes de permitir reintentar un peldaño más alto. */
+  const REINTENTO_ESTABLE_S = 20;
+  /** Cuántas veces se reintenta el mismo peldaño antes de aceptarlo como techo. */
+  const REINTENTOS_POR_PELDAÑO = 2;
+  /** Decisiones a 60 fps antes de subir un peldaño (histéresis de la subida). */
+  const SUBIDA_DECISIONES = 15;
+
+  /** Mayor escala en la que se ha visto fallar. Sube con los reintentos. */
+  let techoFallido = ESCALA_MAX;
+  /** Reintentos gastados en el peldaño del techo actual. */
+  let reintentos = 0;
+  /** Decisiones seguidas pidiendo bajar la escala. */
+  let fallosConsec = 0;
+  /** Segundos acumulados a 60 fps sin bajar (ventana de reintento del techo). */
+  let estableSeg = 0;
+  /** Ya se ha avisado de que el suelo no da 60 fps: se dice UNA vez. */
+  let avisadoSuelo = false;
+  /** Hay que medir el coste en el próximo fotograma (tras cambiar de escala). */
+  let forzarMedida = false;
+  /** Escala con la que se tomó el último coste medido, para el log. */
+  let escalaMedida = ESCALA_MAX;
   let hist: number[] = [];
   let medianaMs = 0; // última mediana calculada (0 = aún sin ventana llena)
   let costeRender = -1; // ms del último fotograma medido con flush
@@ -915,12 +1614,54 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
   let subiendo = 0;
   const pixel = new Uint8Array(4);
 
+  /*
+   * HEARTBEAT DE RENDIMIENTO: cada cuántos segundos sale una línea `[perf]`.
+   *
+   * Dos segundos es la ventana más corta en la que la mediana y el p95 dicen
+   * algo: por debajo, el número se mueve con el ruido del planificador del
+   * sistema; por encima, si el problema es de 500 ms, nadie lo ve llegar.
+   *
+   * En DESARROLLO sale siempre. En producción sólo con `?perf=1`: una línea cada
+   * dos segundos durante toda la partida es exactamente el tipo de consola que
+   * hace que nadie abra la consola nunca.
+   *
+   * EL LATIDO NO MINTE, y antes sí mintía. La ventana `hist` tarda en llenarse
+   * (los 45 primeros fotogramas no cuentan, y la mediana no se calcula hasta
+   * tener 30 intervalos), así que en los primeros latidos salía
+   *
+   *     [perf] mediana 0.0 ms · p95 0.0 ms · escala 1 · ...
+   *
+   * Un 0,0 en la columna de milisegundos se lee como "va perfecto", y era
+   * exactamente lo contrario: era que no había nada medido. Por eso ahora la
+   * línea sólo sale con números cuando hay ventana llena, y mientras no la hay
+   * sale una línea que lo dice sin ambigüedad y sin cifras de tiempos.
+   *
+   * La condición NO es sólo `hist.length`: `medianaMs` sobrevive a un cambio de
+   * escala (no se pone a 0, y `calidad` vacía `hist` entera), así que con la
+   * mediana sola la línea imprimiría un número viejo junto a un p95 recién
+   * medido en cero. Se exigen las dos cosas.
+   */
+  const LATIDO_MS = 2000;
+  /**
+   * Muestras que tiene que tener la ventana para que sus percentiles digan
+   * algo. Es el tamaño al que `calidad()` recorta la ventana después de decidir
+   * (`slice(-20)`), o sea el mínimo que se alcanza una vez calentado.
+   */
+  const PERF_MIN_MUESTRAS = 20;
+  let ultimoLatido = 0;
+
   function mediana(a: number[]): number {
     const s = [...a].sort((x, y) => x - y);
     return s[s.length >> 1]!;
   }
 
-  /** Ajusta la escala de render según lo medido. Devuelve si ha cambiado. */
+  /** Percentil de una ventana ya ordenada o sin ordenar (0..1). */
+  function percentilOrdenado(a: number[], p: number): number {
+    if (a.length === 0) return 0;
+    const s = [...a].sort((x, y) => x - y);
+    return s[Math.min(s.length - 1, Math.max(0, Math.round((s.length - 1) * p)))]!;
+  }
+
   /*
    * ARRANQUE: los primeros fotogramas NO cuentan.
    *
@@ -929,6 +1670,10 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
    * mediana y bajaba la escala a 0,7 nada más cargar, sin que el juego fuera
    * lento (medido: 102 ms en el primer fotograma, 20 ms después). Se ignoran los
    * 45 primeros, que es lo que tarda la escena en quedarse en régimen.
+   *
+   * Y a partir de aquí la medida de COSTE ya no arrastra ese arranque: el
+   * drenaje previo (`frame`) hace que el `readPixels` final mida sólo el
+   * fotograma recién dibujado.
    */
   let frames = 0;
 
@@ -939,31 +1684,89 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
     if (hist.length < 30) return false;
     const m = mediana(hist);
     medianaMs = m;
-    hist = hist.slice(-20); // media ventana, así reacciona al cambio sin oscilar
+    const ventana = hist.slice(-20); // media ventana: reacciona sin oscilar
+    hist = ventana;
     if (m > 19) {
       subiendo = 0;
+      estableSeg = 0;
+      fallosConsec++;
       // El umbral es el PRESUPUESTO del fotograma (16,7 ms) y no un valor bajo:
       // un coste de 14 ms cabe en 60 fps, y bajar resolución ahí sólo emborrona.
       if (coste > 15 && pixelRatio > ESCALA_MIN + 0.001) {
-        techoFallido = Math.min(techoFallido, pixelRatio);
-        pixelRatio = Math.max(ESCALA_MIN, +(pixelRatio - 0.1).toFixed(2));
+        if (fallosConsec === 1) {
+          // Se dice sólo al empezar la racha: durante un problema sostenido
+          // esto se repetiría tres veces cada 20 fotogramas.
+          console.info(
+            `[calidad] fotograma ${m.toFixed(1)} ms con coste ${coste.toFixed(1)} ms a escala ${pixelRatio}: ` +
+              `decisión 1/${FALLOS_NECESARIOS} por encima del umbral`,
+          );
+        }
+        if (fallosConsec < FALLOS_NECESARIOS) return false;
+        const n = fallosConsec;
+        fallosConsec = 0;
+        const antes = pixelRatio;
+        techoFallido = antes;
+        reintentos = 0;
+        pixelRatio = Math.max(ESCALA_MIN, +(antes - 0.1).toFixed(2));
         hist = [];
-        console.info(`[calidad] fotograma ${m.toFixed(1)} ms con coste ${coste.toFixed(1)} ms -> escala ${pixelRatio}`);
+        forzarMedida = true;
+        console.info(
+          `[calidad] BAJA · ${n}/${FALLOS_NECESARIOS} decisiones seguidas · ` +
+            `fotograma ${m.toFixed(1)} ms con coste ${coste.toFixed(1)} ms a escala ${antes} -> escala ${pixelRatio}`,
+        );
         return true;
+      }
+      if (coste > 15 && pixelRatio <= ESCALA_MIN + 0.001 && !avisadoSuelo) {
+        avisadoSuelo = true;
+        console.warn(
+          `[calidad] escalado mínimo: la GPU no da 60 fps ni a ${ESCALA_MIN} ` +
+            `(fotograma ${m.toFixed(1)} ms, coste ${coste.toFixed(1)} ms). El juego sigue ahí; ` +
+            `bajar más sólo emborronaría la escena a cambio de nada.`,
+        );
       }
       return false;
     }
-    // Con 60 fps de verdad (16,7 ms) y margen, se recupera resolución: despacio y
-    // sin volver a pisar la escala que ya falló.
-    if (m <= 17.5 && pixelRatio < Math.min(techoFallido - 0.05, ESCALA_MAX)) {
-      if (++subiendo >= 90) {
-        subiendo = 0;
-        pixelRatio = Math.min(techoFallido - 0.05, ESCALA_MAX, +(pixelRatio + 0.1).toFixed(2));
-        hist = [];
-        console.info(`[calidad] 60 fps con coste ${coste.toFixed(1)} ms -> escala ${pixelRatio}`);
-        return true;
-      }
-    } else subiendo = 0;
+    fallosConsec = 0;
+    if (m > 17.5) {
+      subiendo = 0;
+      estableSeg = 0;
+      return false;
+    }
+    // 60 fps de verdad (16,7 ms con margen). El tiempo se cuenta con los
+    // intervalos REALES de la ventana que acaba de pasar, no con un contador de
+    // fotogramas: si el juego va a 30 fps, 20 fotogramas son medio segundo.
+    estableSeg += ventana.reduce((a, b) => a + b, 0) / 1000;
+    const techo = Math.min(ESCALA_MAX, techoFallido);
+    if (pixelRatio < techo - 0.001) {
+      if (++subiendo < SUBIDA_DECISIONES) return false;
+      subiendo = 0;
+      const antes = pixelRatio;
+      pixelRatio = Math.min(techo, ESCALA_MAX, +(pixelRatio + 0.1).toFixed(2));
+      hist = [];
+      forzarMedida = true;
+      console.info(
+        `[calidad] SUBIDA · fotograma ${m.toFixed(1)} ms con coste ${coste.toFixed(1)} ms a escala ${antes} -> escala ${pixelRatio}`,
+      );
+      return true;
+    }
+    subiendo = 0;
+    /*
+     * Ya está en el techo y aguanta: se le da margen para reintentar UN peldaño
+     * más. El tope de reintentos es lo que impide que esto sea un ciclo: como
+     * mucho se sube dos veces por escala, y hace falta un tranche entero de
+     * `REINTENTO_ESTABLE_S` segundos a 60 fps entre un peldaño y el siguiente.
+     * Si el equipo aguanta, la escalada sigue sola hasta ESCALA_MAX; si no,
+     * vuelve a caer y para (y el aviso del suelo lo dice).
+     */
+    if (techoFallido < ESCALA_MAX - 0.001 && estableSeg >= REINTENTO_ESTABLE_S && reintentos < REINTENTOS_POR_PELDAÑO) {
+      reintentos++;
+      estableSeg = 0;
+      techoFallido = Math.min(ESCALA_MAX, +(techoFallido + 0.1).toFixed(2));
+      console.info(
+        `[calidad] techo reintentado: ${REINTENTO_ESTABLE_S} s estables a escala ${pixelRatio} -> ` +
+          `se permite hasta ${Math.min(ESCALA_MAX, techoFallido)} (reintento ${reintentos}/${REINTENTOS_POR_PELDAÑO})`,
+      );
+    }
     return false;
   }
 
@@ -1041,10 +1844,15 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
           // cada fotograma, se evita el parpadeo: hace falta acumular otros 40°
           // para volver a cambiar, así que correr en arco no encadena cambios.
           const dirAngle = Math.atan2(dx, dz);
-          const giro = Math.abs(wrapPi(dirAngle - lastDirAngle));
-          if (giro > HAND_SWITCH_ANGLE) {
+          const giroRuta = Math.abs(wrapPi(dirAngle - lastDirAngle));
+          if (giroRuta > HAND_SWITCH_ANGLE) {
             handSide = handSide === 1 ? -1 : 1;
             lastDirAngle = dirAngle;
+            // La cabeza mira a la mano nueva antes de que llegue el balón (que
+            // cambia de lado en el mismo instante): un giro de 0,32 rad que se
+            // apaga solo en un tercio de segundo. Sin esto el cambio de mano era
+            // un teletransporte del balón de un lado al otro.
+            giro = handSide;
           }
         }
       }
@@ -1075,46 +1883,108 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
     // Salto. `grounded` sale de aquí porque la animación recoge las piernas al
     // estar en el aire, y antes nunca se pasaba: siempre `true`, así que la
     // pose de vuelo era código muerto.
+    //
+    // ATERRIZAJE (fase B): flexión de rodillas brevisima al tocar suelo. El
+    // salto del tiro bajaba y se plantaba de golpe, como un ascensor; con el
+    // aviso de aterrizaje el cuerpo se hunde 12 cm mientras flexiona y vuelve
+    // en un cuarto de segundo.
+    //
+    // Y la fuerza de la caída es la VELOCIDAD DE BAJADA, no un 1 fijo: `stepJump`
+    // deja `vel` a 0 al tocar, así que hay que leerla ANTES de integrar. Con la
+    // integración exacta, caer desde el pico del tiro da 3,4 m/s (el impulso
+    // entero) y `land` vale 1; un roce de 1 m/s flexionaría una cuarta parte, y
+    // por eso el `clamp` no se queda en 0 ni en 1.
+    const velAntes = jump.vel;
     const grounded = stepJump(jump, dt);
     pos.y = jump.y;
+    if (grounded && !wasGrounded) land = clamp(-velAntes / SHOOT_JUMP, 0.25, 1.3);
+    wasGrounded = grounded;
+    // El decaimiento va DESPUÉS de `animateHuman`, más abajo: si no, el primer
+    // fotograma de la recepción ya entraba con el pico mermado (0,925 en vez de
+    // 1) y el valor de referencia que anuncian los comentarios no era real.
+    // Los estados de un disparo se apagan solos: ninguno necesita reloj.
+    if (giro !== 0) giro -= giro * Math.min(1, dt * 3.4);
+    if (frustracion > 0) frustracion = Math.max(0, frustracion - dt * 1.1);
+    if (flick > 0) flick = Math.max(0, flick - dt);
+    if (celebrate > 0) celebrate = Math.max(0, celebrate - dt);
+    // La ventana de recogida avanza siempre; fuera de ella vale `RECOGE_TIME`.
+    if (recogeT < RECOGE_TIME) recogeT = Math.min(RECOGE_TIME, recogeT + dt);
 
     /*
-     * ATERRIZAJE (fase B): flexión de rodillas brevisima al tocar suelo.
+     * PESOS DE CAPA (ver el bloque donde se declaran).
      *
-     * El salto del tiro bajaba y se plantaba de golpe, como un ascensor. Con el
-     * aviso de aterrizaje el cuerpo se hunde 12 cm mientras flexiona y vuelve en
-     * un cuarto de segundo, que es lo que hace un jugador de verdad al caer.
+     * El peso del tiro sube mientras se carga (la barra marca el mismo avance)
+     * y con el seguimiento del brazo, y baja cuando los dos se acaban. Al soltar
+     * la carga el objetivo pasa a 1 (los brazos arriba del seguimiento) y al
+     * terminar el seguimiento a 0: en los dos casos es `mezclaPeso` quien lleva
+     * el peso, así que ninguno de los dos saltos de rama de antes existe.
      */
-    if (grounded && !wasGrounded) land = 1;
-    wasGrounded = grounded;
-    if (land > 0) land = Math.max(0, land - dt * 4.5);
+    const objetivoTiro = charging ? Math.min(chargeT / CHARGE_FULL, 1) : flick / FLICK_TIME;
+    tiroW = mezclaPeso(tiroW, objetivoTiro, dt);
+    celeW = mezclaPeso(celeW, celebrate > 0 ? celebrate / CELEBRATION_TIME : 0, dt);
+    /*
+     * Peso de "balón en las manos": dentro de la ventana de recogida manda su
+     * curva (la misma que sube el balón) y fuera, el estado del balón.
+     */
+    holdW =
+      recogeT < RECOGE_TIME
+        ? holdPeso(recogeT)
+        : mezclaPeso(holdW, ball.state === 'held' ? 1 : 0, dt, HOLD_TASA);
 
-    animateHuman(player, animTime, speed01, ball.state === 'held' && !charging, grounded, land);
-    if (charging) poseShoot(player, Math.min(chargeT / CHARGE_FULL, 1));
-    if (flick > 0) {
-      flick -= dt;
-      poseShoot(player, 1);
-    }
-    if (celebrate > 0) {
-      celebrate -= dt;
-      poseCelebrate(player, animTime, Math.min(celebrate / 1.6, 1));
-    }
+    animateHuman(
+      player,
+      animTime,
+      speed01,
+      ball.state === 'held',
+      grounded,
+      land,
+      { handSide, regate: regate01(speed01), giro, frustracion, hold: holdW, recoge: recogePeso(recogeT) },
+    );
+    // Las capas de pose se MEZCLAN encima: nunca pisan los huesos.
+    if (tiroW > 0.002) poseShoot(player, tiroW);
+    if (celeW > 0.002) poseCelebrate(player, animTime, celeW);
+    // El decaimiento del aterrizaje, aquí y no antes: la flexión de este
+    // fotograma usa el pico entero, y sólo a partir del siguiente baja.
+    if (land > 0) land = Math.max(0, land - dt * 4.5);
 
     // Balón (el bote va sincronizado con la zancada: mismo reloj).
     if (ball.state === 'held') placeHeldBall(animTime, speed01);
     else {
       ball.step(dt);
+      spinBall(dt);
       // RECOGIDA: si el jugador pasa por encima del balón, vuelve a las manos.
       // Antes sólo se recuperaba cuando el balón se detenía por completo, así
       // que un balón rodando por la pista se quedaba muerto hasta que paraba.
       const cerca = Math.hypot(pos.x - ball.pos.x, pos.z - ball.pos.z);
       if (cerca < 0.62 && ball.pos.y < 1.5) {
         ball.state = 'held';
+        /*
+         * RECOGIDA COMO TRANSICIÓN, no como teletransporte.
+         *
+         * `recogeDesde` guarda la posición REAL del balón —con la altura que
+         * tenía, esté rodando por el suelo o viniendo del rebote— y `recogeT`
+         * abre la ventana de 0,3 s: de ahí en adelante el balón sube
+         * interpolando hasta la posición de manos y el gesto de agacharse va
+         * con él, los dos con el mismo peso. Antes el balón saltaba a la
+         * posición final en este mismo fotograma, y encima los brazos se
+         * quedaban clavados 0,35 s en la pose de tiro del `flick`.
+         */
+        recogeDesde.copy(ball.pos);
+        recogeT = 0;
         hud.setPrompt(null);
       } else if (ball.settled) {
-        if (ball.scored) celebrate = 1.6;
-        else missStreak++;
+        if (ball.scored) celebrate = CELEBRATION_TIME;
+        else {
+          // FRUSTRACIÓN (proactivo): hombros caídos y mirada al suelo un
+          // segundo. Sin esto, fallar sólo cambiaba un número del marcador.
+          frustracion = 1;
+          missStreak++;
+        }
         ball.state = 'held';
+        // Misma transición que al pasar por encima: el balón estaba parado en el
+        // suelo y sube hasta las manos sin dar un salto.
+        recogeDesde.copy(ball.pos);
+        recogeT = 0;
       }
     }
 
@@ -1157,7 +2027,7 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
     // Redes del aro: la onda baja mientras haya algo que contar.
     NET.time.value = time;
     if (netAmp > 0) {
-      netAmp = Math.max(0, netAmp - dt * 2.2);
+      netAmp = Math.max(0, netAmp - dt * netDecay);
       NET.amp.value = netAmp;
     }
     // Público: la ola de celebración sale del centro y recorre la grada.
@@ -1171,8 +2041,19 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
 
     // Decorado vivo
     for (const r of rings) r.scale.setScalar(1 + Math.sin(time * 3) * 0.04);
-    animateHuman(set.reporter, time, 0, false);
-    animateHuman(set.operator, time, 0, false);
+    /*
+     * Plató (punto C). `animateTvReporter` / `animateTvOperator` llaman a
+     * `animateHuman` y le añaden por encima peso, hombros, respiración y
+     * gestos; con `time` (el reloj decorativo) se congelan solas con
+     * `prefers-reduced-motion`.
+     *
+     * `habla` sólo vale 1 en directo: fuera del directo el reportero está de
+     * pie esperando y no adormece.
+     */
+    animateTvReporter(set.reporter, time, mode === 'interview' ? 1 : 0);
+    animateTvOperator(set.operator, time);
+    // El brazo del micro se pone AL FINAL y a pelo: cuelga de `armR` y es lo
+    // único que no se anima. El reportero gesticula con la otra mano por eso.
     set.reporter.armR.rotation.x = mode === 'interview' ? -1.45 : -1.15;
     set.tally.visible = mode === 'interview' || Math.floor(time * 1.5) % 2 === 0;
     (set.onAir.material as THREE.MeshStandardMaterial).emissiveIntensity = mode === 'interview' ? 1.6 : 0.2;
@@ -1266,23 +2147,101 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
     update(dt, reduced ? 0 : clock.elapsedTime, clock.elapsedTime);
 
     /*
-     * El coste se mide SÓLO cuando el intervalo ya no cabe y como mucho cada 120
-     * fotogramas: el `readPixels` fuerza el flush y eso alarga ese fotograma, así
-     * que no se paga cuando todo va bien ni se paga en cada comprobación.
+     * MEDIR EL COSTE DE VERDAD: DRENAR LA COLA ANTES DE ARRANCAR EL RELOJ.
+     *
+     * El `readPixels` de 1 píxel es lo que hace válida la medida (fuerza el
+     * vaciado de la cola, así que mide rasterizado y no envío de comandos), pero
+     * vacía TODO lo pendiente, no sólo este fotograma. Con el reloj puesto antes
+     * de `render()`, eso metía en el intervalo los fotogramas del arranque —las
+     * siete vistas de la precompilación, la subida de texturas y el horneado de
+     * sombras—: el 204,3 ms que veía el usuario, repetido 120 fotogramas
+     * seguidos porque la medida además ponía el reloj a cero.
+     *
+     * Ahora el drenaje va ANTES de arrancar el reloj y NO se cronometra: el
+     * `readPixels` final mide sólo el fotograma que se acaba de dibujar. Si sale
+     * alto, es de verdad la GPU (o el sistema), no la carga.
+     *
+     * No se ha comprado nada con esto: es el mismo vaciado, sólo que en el
+     * fotograma anterior. Lo que cambia es de dónde se mide.
+     *
+     * Se mide SÓLO cuando el intervalo ya no cabe (o cuando toca repetir por un
+     * cambio de escala): el drenaje acorta ese fotograma, así que no se paga
+     * cuando todo va bien ni se paga en cada comprobación.
      */
     desdeCoste++;
     // `medianaMs` y no `hist.length`: la ventana se recorta a 20 dentro de
     // `calidad`, así que comprobar el tamaño aquí dejaría la medida de coste sin
     // disparar nunca (era el fallo de la primera versión).
-    const medir = medianaMs > 19 && (desdeCoste >= 120 || costeRender < 0);
+    const medir = forzarMedida || (medianaMs > 19 && (desdeCoste >= 120 || costeRender < 0));
+    if (medir) gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
     const t0 = medir ? performance.now() : 0;
     renderer.render(scene, camera);
     if (medir) {
       gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
-      costeRender = performance.now() - t0;
+      const ms = performance.now() - t0;
+      const escala = pixelRatio;
+      costeRender = ms;
+      escalaMedida = escala;
       desdeCoste = 0;
+      forzarMedida = false;
+      // Se dice SIEMPRE, alto o bajo: "cabe" también es un dato, y sin él no se
+      // puede distinguir una GPU lenta de un arranque ruidoso al leer el log.
+      console.info(
+        `[coste] ${ms.toFixed(1)} ms con la cola drenada antes del reloj, a escala ${escala} · ` +
+          (ms > 15
+            ? 'supera el presupuesto de fotograma: la culpa es de la GPU'
+            : 'cabe en el presupuesto de fotograma; si el fotograma no llega, el que falla es el sistema'),
+      );
     }
+    // `calidad` puede pedir una escala nueva; `forzarMedida` obliga entonces a
+    // que el siguiente fotograma se mida con la escala NUEVA y no con la que
+    // acababa de dejar atrás.
     if (calidad(dt * 1000, costeRender)) resize();
+
+    /*
+     * HEARTBEAT. Una línea compacta cada `LATIDO_MS` para poder ver la sesión
+     * entera de un vistazo sin abrir nada.
+     *
+     * `draws` y `triángulos` salen de `renderer.info`, que se reinicia en cada
+     * `render()`: son los del ÚLTIMO fotograma dibujado, con su pase de color.
+     * El pase de sombras no sale por aquí (con `autoUpdate = false` sólo cuenta
+     * cuando se hornea, y entonces es el único que se ha dibujado). Para el
+     * recuento con el pase de sombras incluido está `__court.draws()`, que
+     * cuenta a nivel de WebGL.
+     *
+     * `n` es el número de intervalos de la ventana: sin él, un p95 de 16,67 no
+     * se distingue de "sale justo en vsync" y un 33,34 de "va a 30 fps".
+     */
+    if (verPerf) {
+      const ahora = performance.now();
+      if (ahora - ultimoLatido >= LATIDO_MS) {
+        ultimoLatido = ahora;
+        const info = renderer.info.render;
+        const programas = renderer.info.programs?.length ?? 0;
+        // Ventana llena de verdad: hace falta mediana YA calculada y suficiente
+        // número de intervalos detrás. Si no, no sale ninguna cifra de tiempo.
+        if (medianaMs > 0 && hist.length >= PERF_MIN_MUESTRAS) {
+          console.info(
+            `[perf] mediana ${medianaMs.toFixed(2)} ms · p95 ${percentilOrdenado(hist, 0.95).toFixed(2)} ms · ` +
+              `n=${hist.length} fotogramas · escala ${pixelRatio} · programas ${programas} · ` +
+              `draws ${info.calls} (sin pase de sombras) · triángulos ${info.triangles}`,
+          );
+        } else {
+          /*
+           * LÍNEA DE "AÚN NO HAY NÚMEROS", y sin cifras de tiempos a propósito.
+           *
+           * Dice cuántas muestras lleva, que es lo que hay que saber para leer
+           * bien el resto: mientras no llegue al mínimo, el p95 y la mediana que
+           * se podrían imprimir aquí NO serían la sesión, serían el hueco.
+           */
+          console.info(
+            `[perf] midiendo… aún sin mediana ni p95: ${hist.length}/${PERF_MIN_MUESTRAS} intervalos ` +
+              `(mediana en ${medianaMs.toFixed(1)} ms: sin calcular) · escala ${pixelRatio} · ` +
+              `programas ${programas} · draws ${info.calls} (sin pase de sombras) · triángulos ${info.triangles}`,
+          );
+        }
+      }
+    }
   }
 
   const onVisibility = (): void => {
@@ -1306,7 +2265,7 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
    *
    * El material único dejó 83 mallas del mundo compartiendo shader y estado;
    * cada una seguía siendo un draw call. Aquí se cuece su `matrixWorld` en la
-   * geometría y se funden por estado de sombras y celda de 24 m. Se deja FUERA
+   * geometría y se funden por estado de sombras y celda. Se deja FUERA
    * todo lo que se mueve (jugador, balón y los dos actores del plató) porque su
    * sombra se hornearía congelada y porque su pose cambia cada fotograma.
    *
@@ -1315,7 +2274,38 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
    * antes SIN recargar y sin depender de dos cargas distintas (que es la única
    * forma de que la comparación de píxeles sea concluyente).
    */
-  const BATCH_CELL = 24;
+  /*
+   * TAMAÑO DE LA CELDA DEL FUNDIDO: 24 m → 12 m.
+   *
+   * El intercambio es siempre el mismo y no es otro: celda más pequeña = lotes
+   * más pequeños = esfera envolvente más pequeña = el frustum puede descartar
+   * bastante más; a cambio, más lotes = más draw calls. Con 24 m el pabellón
+   * cabe en 7 lotes y cada uno abarca un cuarto entero, con su esfera
+   * encompassiendo medio pabellón, así que el culling por frustum NO puede
+   * descartar NINGUNO: el techo, las gradas lejanas y las paredes se dibujan
+   * enteros aunque no estén en cuadro.
+   *
+   * LA MEDIDA DE ESTE CAMBIO ESTÁ PENDIENTE, y hay que decirlo en el sitio
+   * donde se lee: esta sesión no tenía shell, así que no se ha podido pasar
+   * `__court.draws()` con 24, 16, 12 y 8 m. Lo que justifies el 12 m es la
+   * GEOMETRÍA, no una cifra: a 12 m la retícula es de 6 × 6 sobre un pabellón
+   * de ±30 × ±26 m, o sea lotes de un cuarto de cuarto, y la franja de la vista
+   * de juego (la pista y el borde de grada que la cámara encuadra) deja de
+   * arrastrar en su lote las esquinas que nunca se ven.
+   *
+   * Poner el valor por defecto sin la cifra es un riesgo asumido a conciencia,
+   * así que la forma de comprobarlo o de volver atrás está a un clic:
+   *
+   *   · `?cell=24` (o `?cell=16`, `?cell=8`) en DESARROLLO fuerza el barrido, y
+   *     la línea `[batch]` que sale al cargar dice cuántos lotes y cuántos
+   *     triángulos ha hecho cada vez;
+   *   · `__court.draws()` da el par (draw calls, triángulos) de cada vista;
+   *   · si el 12 m sale peor —más llamadas sin menos triángulos—, se vuelve a 24
+   *     cambiando una constante, que es todo el cambio.
+   */
+  const cellParam = Number(parametrosDev.get('cell'));
+  const BATCH_CELL =
+    import.meta.env.DEV && Number.isFinite(cellParam) && cellParam > 0 ? cellParam : 12;
   /** El `cell` es un parámetro —y no la constante— para poder barrerlo desde el gancho de
    * desarrollo: 24 m da 6 lotes y +18 % de triángulos en la vista de juego; menos celda son
    * más llamadas y menos triángulos. Ver BITACORA §3l. */
@@ -1356,10 +2346,817 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
    * comparación entre dos cargas distintas sólo es válida si lo único que cambia
    * es esta línea.
    */
-  if (!(import.meta.env.DEV && new URLSearchParams(location.search).has('nobatch'))) mergeStaticLots();
+  if (!(import.meta.env.DEV && parametrosDev.has('nobatch'))) mergeStaticLots();
+
+  /*
+   * A/B DEL MATERIAL DEL VOXEL: `?nolambert=1` (sólo desarrollo).
+   *
+   * `VOXEL_MATERIAL` es un `MeshLambertMaterial` (ver el bloque de `util.ts`: con
+   * `roughness: 0.92` y `metalness: 0` el `MeshStandardMaterial` era un Lambert
+   * con pasos de más, y se pagaba en todos los fragmentos del mundo). El
+   * interruptor devuelve el `MeshStandardMaterial` original a TODA la escena, de
+   * modo que la comparación Lambert/Standard sea dos números en la misma sesión
+   * y no dos builds con dos cachés distintas.
+   *
+   * Va AQUÍ, y no dentro de los constructores, por dos razones:
+   *  · los materiales se comparten por IDENTIDAD y `batch.ts` funde comparando
+   *    por identidad, así que cambiar uno en caliente dejaría la escena a medias;
+   *  · tiene que estar resuelto ANTES de `bakeShadows()` y de
+   *    `precargaShaders()`: si se cambiara después, los programas del material
+   *    viejo se compilarían dentro del juego y la medida saldría contaminada
+   *    justo por el trabajo que se quiere medir.
+   *
+   * Se cambia SÓLO el material del voxel, por identidad: ni la red de los aros,
+   * ni los materiales con textura, ni `mat()`, ni la grada. Un recorrido de la
+   * escena comparando por identidad no puede tocar nada más.
+   */
+  let materialVoxel: THREE.Material = VOXEL_MATERIAL;
+  if (sinLambert) {
+    const standard = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.92,
+      metalness: 0,
+      flatShading: false,
+      side: THREE.FrontSide,
+    });
+    let cambiadas = 0;
+    scene.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.isMesh && m.material === VOXEL_MATERIAL) {
+        m.material = standard;
+        cambiadas++;
+      }
+    });
+    materialVoxel = standard;
+    console.info(`[ab] ?nolambert=1: ${cambiadas} mallas con MeshStandardMaterial (el Lambert queda sin usar)`);
+  }
+
+  /*
+   * QUIÉN ES ESTA MÁQUINA.
+   *
+   * Toda la discusión sobre si el juego va lento por la GPU, por el rasterizador
+   * por software o por el sistema se estaba resolviendo a ojo. Con esta línea
+   * se acaba: sale en DESARROLLO y también en PRODUCCIÓN, una vez al arrancar,
+   * antes incluso de que empiece el juego. Dice el renderer y el vendor reales,
+   * el `devicePixelRatio`, el tamaño de verdad del lienzo (el búfer de dibujo,
+   * que es el ancho por el alto por la escala, no el tamaño CSS), la anisotropía
+   * máxima que pueden pedir las texturas y qué material está usando el voxel.
+   *
+   * Sin `WEBGL_debug_renderer_info` —Firefox lo tiene retirado y hay navegadores
+   * que lo ocultan por privacidad— se recurre a `gl.RENDERER` / `gl.VENDOR`,
+   * que son justo los valores que el navegador tiene derecho a falsear.
+   *
+   * ─────────────────────────────────────────────────────────────────────────────
+   * UN NÚMERO NO ES UN NOMBRE (fallo de este log)
+   * ─────────────────────────────────────────────────────────────────────────────
+   *
+   * Salía esto:
+   *
+   *     [gpu] 37446 · vendor=37445 · dpr=1 · ...
+   *
+   * 37445 y 37446 son 0x9245 y 0x9246: enums de `WEBGL_debug_renderer_info`, no
+   * el nombre de nada. Cuando el navegador tiene `WEBGL_debug_renderer_info`
+   * declarado pero lo tiene ENMASCARADO, `getParameter` no da error ni da cadena
+   * vacía: da un entero, y ese entero salía en la consola con la misma
+   * tipografía que un nombre de GPU. Peor que no saberlo: parece una medición.
+   *
+   * Lo que hace ahora:
+   *
+   *  · **Distingue nombre de enum.** Un texto es un nombre si NO es un entero en
+   *    decimal ni en hexadecimal, ni `null`/`undefined`. Los valores que no lo
+   *    son se cuentan como ENMASCARADO y se dicen con esas palabras.
+   *  · **Prueba las dos vías antes de rendirse:** primero la extensión, y si el
+   *    valor no es un nombre, `gl.getParameter(gl.RENDERER)` / `gl.VENDOR`.
+   *    Las dos, y el descarte de enums, están en `leerGpu()`: esa función es la
+   *    fuente, y este bloque y la escala de partida leen las dos desde ella.
+   *  · **Y si tampoco, `navigator.gpu`:** el adaptador de WebGPU es otra ruta al
+   *    mismo hardware y suele estar disponible aunque WebGL esté enmascarado. Se
+   *    consulta en segundo plano (es una promesa) y su resultado sale en una
+   *    segunda línea `[gpu]` si la hay.
+   *  · **Y siempre dice cuál es el siguiente paso:** `chrome://gpu`, que es donde
+   *    el navegador enseña el renderer real y, sobre todo, POR QUÉ lo ha
+   *    enmascarado (una política de privacidad o un bloqueo por lista negra).
+   *
+   * Si tras todo eso no se puede identificar, se DICE que no se ha podido. Un
+   * log que no sabe es más útil que uno que enseña 37446 como si fuera el nombre
+   * de la tarjeta gráfica.
+   */
+  {
+    /*
+     * La lectura la hace `leerGpu()` (arriba, junto a la decisión de la escala),
+     * y no una copia local: es la MISMA lectura que dijo con qué resolución se
+     * entra. Si aquí se leyera otra vez, las dos podrían acabar enseñando cosas
+     * distintas y el log diría un nombre que no es el con el que arrancó el
+     * juego.
+     */
+    const gpuLeida = leerGpu();
+    const rendererTxt = gpuLeida.renderer;
+    const vendorTxt = gpuLeida.vendor;
+    const voxel = materialVoxel.type === 'MeshLambertMaterial' ? 'Lambert' : 'Standard';
+
+    /**
+     * Cómo se describe un valor que no se ha podido identificar: se dice que lo
+     * está, y se enseña lo que devuelve para que el que mira sepa qué tiene.
+     */
+    const enmascarado = (que: string, crudos: string[]): string => {
+      const vistos = crudos.filter(Boolean);
+      return `${que} ENMASCARADO por el navegador (devuelve ${vistos.length ? vistos.join(' / ') : 'nada'})`;
+    };
+
+    console.info(
+      `[gpu] ${rendererTxt || enmascarado('renderer', gpuLeida.rendererCrudos)} · ` +
+        `${vendorTxt ? `vendor=${vendorTxt}` : enmascarado('vendor', gpuLeida.vendorCrudos)} · ` +
+        `dpr=${window.devicePixelRatio} (escala ${pixelRatio}, arranque: ${motivoEscala}) · ` +
+        `lienzo ${canvas.width}x${canvas.height} · anisotropía ${renderer.capabilities.getMaxAnisotropy()} · ` +
+        `voxel=${voxel} · siguiente paso: chrome://gpu`,
+    );
+    if (!rendererTxt || !vendorTxt) {
+      console.warn(
+        '[gpu] el navegador no ha revelado el nombre de la GPU. ' +
+          'Los valores de arriba son enums o literales, no una tarjeta: no los leas como nombre. ' +
+          'Siguiente paso: chrome://gpu (pestaña "Graphics Feature Status" y "Driver Information"), ' +
+          'donde sale el renderer real y por qué está enmascarado.',
+      );
+      /*
+       * SEGUNDA OPORTUNIDAD: `navigator.gpu`.
+       *
+       * WebGPU pregunta por el adaptador por otra ruta y suele contestar aunque
+       * WebGL esté enmascarado, así que es el último intento antes de decir que
+       * no se puede. Es asíncrono por naturaleza, así que sale en su propia
+       * línea `[gpu]` cuando conteste. Se tipa aquí a mano en vez de usar
+       * `Navigator.gpu` porque la superficie de WebGPU en `lib.dom.d.ts`
+       * cambia entre versiones de TypeScript y esto no puede romper la
+       * compilación el día que suba.
+       */
+      type InfoGpu = { vendor?: string; architecture?: string; description?: string };
+      type AdaptadorGpu = { info?: InfoGpu; requestAdapterInfo?: () => Promise<InfoGpu> };
+      const gpuApi = (navigator as unknown as { gpu?: { requestAdapter(): Promise<AdaptadorGpu | null> } }).gpu;
+      if (!gpuApi) {
+        console.warn('[gpu] este navegador no tiene navigator.gpu (sin WebGPU): la vía alternativa no existe');
+      } else {
+        // Se copia a una `const` de la rama: dentro del cierre async el
+        // estrechamiento de tipos de `gpuApi` no se puede dar por hecho, y así
+        // no depende de la versión de TypeScript.
+        const api = gpuApi;
+        void (async (): Promise<void> => {
+          try {
+            const adaptador = await api.requestAdapter();
+            if (!adaptador) {
+              console.warn('[gpu] navigator.gpu no ha devuelto adaptador (puede estar bloqueado)');
+              return;
+            }
+            // `adapter.info` es la API nueva (Chrome 128+); `requestAdapterInfo()`,
+            // la vieja. Se prueban las dos porque el nombre de una sigue
+            // funcionando donde la otra ya no.
+            const info = adaptador.info ?? (adaptador.requestAdapterInfo ? await adaptador.requestAdapterInfo() : null);
+            const partes = info ? [info.vendor, info.architecture, info.description].filter(Boolean) : [];
+            console.info(`[gpu] navigator.gpu → ${partes.join(' ') || 'adaptador sin datos'}`);
+          } catch (e) {
+            console.warn('[gpu] navigator.gpu no ha podido consultarse', e);
+          }
+        })();
+      }
+    }
+  }
+
+  /*
+   * PRECARGA DE SHADERS: POR QUÉ EL JUEGO VA MÁS FLUIDO DESPUÉS DE ABRIR UNA SECCIÓN.
+   *
+   * SÍNTOMA (literal): "ocurre una mejora considerable en el rendimiento
+   * posterior a abrir alguna de las secciones y luego cerrarla respecto a la
+   * primera carga el juego sin abrir ninguna sección".
+   *
+   * MECÁNICA (leída en `node_modules/three/src/renderers/WebGLRenderer.js`):
+   * un programa de shader se enlaza la PRIMERA vez que se dibuja una malla con
+   * ese material, no al construirlo. `WebGLRenderer.compile()` es precisamente
+   * la API que adelanta ese enlace, y el juego NO la llamaba en ninguna parte
+   * (grep de `src`: `renderer.compile` sólo aparece en este bloque). O sea:
+   * la factura se pagaba dentro del juego.
+   *
+   * DÓNDE SE PAGABA, en esta escena concreta:
+   *  · `bakeShadows()` (el horneado que ya existía) recorre el pase de sombras
+   *    COMPLETO, así que el horneado sí dejaba calientes los programas de
+   *    profundidad. Lo que no dejaba calientes era el pase de color: sólo dibuja
+   *    lo que cae en el frustum, y la cámara de juego va a 12,4 m mirando hacia
+   *    el jugador. El atrezo de las secciones que queda fuera de ese cono
+   *    (banquillo, túnel, mesa de anotadores, redes, plató, pantallas del
+   *    marcador) compilaba su programa la primera vez que se entraba en su zona
+   *    o se abría su panel.
+   *  · Abrir una sección mueve la cámara a 1,75-2,5 m y muy cerca del atrezo:
+   *    entra en cuadro material que la vista de juego no había visto. Eso
+   *    compila programas nuevos AHORA. Al cerrar, la cámara vuelve a la de
+   *    juego, pero los programas ya están en `renderer.info.programs`, que sólo
+   *    crece: no se vuelven a pagar nunca. De ahí el "va mejor después": no es
+   *    que abrir una sección mejore el juego, es que abrirla lo CALIENTA.
+   *  · Y desde el menú (sin entrar en la zona) también: `mode = 'panel'` arranca
+   *    la órbita lenta de ±9°, y esa deriva saca del frustum cosas nuevas poco a
+   *    poco, que también pagan su primera vez.
+   *
+   * Y hay un remate que se ve sólo leyendo el orden de las llamadas: al hornear,
+   * la cámara SIGUE EN SU POSE POR DEFECTO. `updateCamera(0, true)` no se llama
+   * hasta `start()`, así que `bakeShadows()` no sólo hornea sombras: además
+   * dibuja un pase de color entero desde (0, 0, 0) mirando a -Z, en mitad del
+   * parqué. Ese pase de color calienta lo que se ve desde el ORIGEN, y el juego
+   * arranca con la cámara a 12,4 m mirando al jugador: otro frustum, otra
+   * factura, en el primer fotograma de todos. Por eso el salto de los primeros
+   * segundos no es un efecto raro: es la vista de origen que se queda obsoleta.
+   *
+   * No se arregla colocando la cámara antes de hornear: es redundante en cuanto
+   * existe `precargaShaders()` (que no recorta por frustum) y ensuciaría el
+   * `?nopre=1`, que tiene que seguir reproduciendo el síntoma viejo exacto.
+   *
+   * EL ARREGLO: pagar lo mismo, pero una vez y en la pantalla de carga, con la
+   * barra de progreso por delante. Nada de esto cambia lo que se ve ni un píxel:
+   * los mismos materiales, los mismos objetos, los mismos parámetros de luz.
+   *
+   * TRES MATICES QUE SÍ IMPORTAN, leídos del mismo archivo:
+   *
+   *  1. `compile()` recorre `scene.traverse()` —NI de lejos `traverseVisible()`, y
+   *     sin recortar por frustum—, así que una sola pasada ya recoge TODOS los
+   *     materiales de la escena. Recorrer las seis vistas de sección no compra
+   *     programas nuevos: se queda por tres razones. (a) `compile()` usa la
+   *     cámara para decidir qué luces entran
+   *     (`object.layers.test(camera.layers)`) y para el estado de render, así que
+   *     iterar vistas no deja la precompilación colgando de una suposición
+   *     sobre las capas; (b) las pasadas siguientes son un no-op sobre la caché
+   *     (el coste entero está en la primera) y dan progreso real a la barra;
+   *     (c) es donde se DIBUJA cada vista una vez para calentar búferes de
+   *     geometría y texturas — eso `compile()` no lo hace, y ahora es el
+   *     comportamiento por defecto (ver el bloque de los interruptores).
+   *  2. `compileAsync` es la variante con `KHR_parallel_shader_compile`: el
+   *     navegador enlaza en segundo plano y la promesa resuelve cuando el
+   *     programa está listo. Existe en 0.170 y está en los tipos (`@types/three`
+   *     0.170 la declara). Si la extensión no está, `compileAsync` compila en
+   *     síncrono y la promesa se resuelve igual: nunca es peor que `compile()`.
+   *  3. NO es un dibujado. `compile()` no toca búferes de geometría, ni texturas,
+   *     ni `shadowMap`. Por eso va DESPUÉS de `bakeShadows()`: los programas del
+   *     pase de sombras los pone el horneado, y `compile()` pone los del pase de
+   *     color. Al revés, faltaría una de las dos mitades. Y por eso, sola, se
+   *     queda a medias: la otra mitad es `precargaTexturas()` (ver más abajo).
+   *
+   * AVISO DE HONESTIDAD: las dos sesiones en las que se ha escrito este bloque
+   * NO tenían shell (permiso denegado), así que está razonado leyendo el código,
+   * NO medido aquí. Los números salen solos en la consola al cargar —programas
+   * antes y después, milisegundos de la precompilación y de la subida de
+   * texturas—, y la comparación A/B se hace con `?nopre=1` +
+   * `__court.diagnosticar()`. Ver la sonda más abajo.
+   */
+
+  /** Desde qué punto de la barra se reparte la precompilación (el resto es espera). */
+  const PRECARGA_0 = 0.86;
+  /** Punto en el que acaba la precompilación y empieza la subida de texturas. */
+  const PRECARGA_TEX = 0.95;
+
+  /*
+   * TECHO DE TIEMPO DE LA PRECARGA.
+   *
+   * Es tiempo MUERTO, pero tiempo muerto que el jugador ve como una barra
+   * parada, así que no puede ser infinito. `compileAsync` con
+   * `KHR_parallel_shader_compile` va sondeando el estado de enlace con
+   * `setTimeout(..., 10)` hasta que todos los materiales están listos: es la vía
+   * normal, y si un driver se queda sin responder, la promesa NO resuelve nunca
+   * y la carga se queda en 0,95 % para siempre sin que se pueda cerrar el juego.
+   *
+   * Con el techo, en ese caso se abandona la vista (el enlace sigue adelante por
+   * debajo, en el navegador, y para cuando el jugador llegue ya estará listo) y
+   * se cuenta como vista OMITIDA. El juego entra igual: una vista sin precalentar
+   * cuesta un tirón en esa zona, no una pantalla en negro.
+   */
+  const VISTA_TECHO_MS = 1200;
+  /** Techo del paseo entero de subida de texturas (es una llamada síncrona por textura). */
+  const TEXTURAS_TECHO_MS = 900;
+
+  /** Las vistas que se dejan calientes: la de juego y las seis de sección. */
+  const vistasPrecarga: {
+    nombre: string;
+    pos: readonly [number, number, number] | null;
+    look: readonly [number, number, number] | null;
+  }[] = [
+    { nombre: 'juego', pos: null, look: null },
+    ...SECTION_IDS.map((id) => ({
+      nombre: id as string,
+      pos: SECTION_CAMERA[id].pos,
+      look: SECTION_CAMERA[id].look,
+    })),
+  ];
+
+  /*
+   * Interruptores de MEDICIÓN.
+   *  · `?nopre=1`      — no precompila: reproduce el síntoma viejo para comparar.
+   *  · `?noprewarm=1`  — precompila pero NO dibuja cada vista: el estado anterior.
+   *
+   * PREWARM ES AHORA EL COMPORTAMIENTO POR DEFECTO. Decisión del propietario:
+   * "aunque tarde más la barra en cargar, la experiencia mejoraría al no tener
+   * lag". Es literalmente su argumento, y es correcto: lo que se compra son los
+   * primeros segundos de juego.
+   *
+   * Antes era opt-in (`?prewarm=1`) porque el intercambio —siete fotogramas
+   * completos de barra de carga, uno por vista, con flush— nunca se había
+   * cronometrado en ninguna máquina. La cifra que lo justificaba ya está: en la
+   * máquina de referencia (Intel HD 4600) el fotograma estable ronda los 20 ms,
+   * así que siete dibujados son ~140-250 ms de barra. Por una barra que ahora
+   * dura un segundo más, se compra que nada se compile, nada se suba y nada se
+   * que nada se compile ni se suba dentro de los primeros segundos de partida.
+   *
+   * Lo que `compileAsync` NO hace, y es justo lo que este paso añade:
+   *
+   *  · **Subir los búferes de geometría.** Un programa compilado no tiene
+   *    vértices: los ~460.000 triángulos del mundo se suben a la GPU la PRIMERA
+   *    vez que se dibujan. Y como el culling por frustum decide qué se dibuja,
+   *    la geometría de la mitad del anillo que queda detrás de la cámara NO se
+   *    sube en el primer fotograma: se sube el primer día que el jugador mira
+   *    hacia otro lado, y ese día da un tirón.
+   *  · **Crear el estado de GL de cada malla** (VAO, buffers de índice, uniforms
+   *    de textura), que también es la primera vez.
+   *
+   * Por eso se dibujan las SIETE vistas y no sólo la de juego: cada una mete en
+   * la GPU lo que las otras seis no ven, y la unión de las siete es toda la
+   * escena. Con la única vista de juego quedaría medio recinto sin subir.
+   *
+   * No se ve nada raro: `#loader` es opaco y va por encima del lienzo
+   * (`z-index: 40`), así que los siete dibujados ocurren detrás de la barra.
+   */
+  const sinPrecompile = import.meta.env.DEV && parametrosDev.has('nopre');
+  const prewarm = !parametrosDev.has('noprewarm');
+
+  /*
+   * ¿EXISTE `compileAsync` EN EL THREE INSTALADO?
+   *
+   * Comprobado leyendo el paquete, no de memoria: `WebGLRenderer.js` la declara
+   * en la línea 1034 (`this.compileAsync = function ( scene, camera, targetScene
+   * = null )`), así que en 0.170 está. Aun así NO se llama a pelo: si algún día
+   * se baja una versión sin ella —o si algún polyfill del navegador la quita—
+   * el juego tiene que cargar igual, y por eso la comprobación es de
+   * disponibilidad, no de versión.
+   */
+  const hayCompileAsync = typeof renderer.compileAsync === 'function';
+
+  /**
+   * Compila los programas de la vista que tiene la cámara ahora mismo, y no
+   * puede colgarse ni rechazar.
+   *
+   * `compileAsync` devuelve una promesa que NUNCA rechaza, pero con el techo de
+   * `Promise.race` se abandona a mitad, y una promesa abandonada que un día
+   * rechazara daría un error no capturado. El `then` de rechazo está por eso:
+   * registra y devuelve el mismo resultado que el éxito.
+   */
+  async function compilarVista(): Promise<'ok' | 'techo'> {
+    if (!hayCompileAsync) {
+      // Vía síncrona de siempre: peor que la asíncrona cuando existe la
+      // extensión, y sólo un bloqueo más largo cuando no.
+      renderer.compile(scene, camera);
+      return 'ok';
+    }
+    let reloj = 0;
+    const techo = new Promise<'techo'>((r) => {
+      reloj = window.setTimeout(() => r('techo'), VISTA_TECHO_MS);
+    });
+    try {
+      // Llamada por método (`renderer.compileAsync(…)`, no su valor suelto):
+      // dentro usa `this` (`this.compile`, `currentRenderState`), y en un módulo
+      // ESM perder el receptor es `this === undefined` y una excepción. La
+      // guarda de arriba ya ha comprobado que la función existe.
+      const p = renderer.compileAsync(scene, camera);
+      const r = await Promise.race([
+        p.then(
+          () => 'ok' as const,
+          (e: unknown) => {
+            console.warn('[preload] compileAsync falló en esta vista; se sigue', e);
+            return 'ok' as const;
+          },
+        ),
+        techo,
+      ]);
+      return r;
+    } finally {
+      window.clearTimeout(reloj);
+    }
+  }
+
+  async function precargaShaders(): Promise<void> {
+    const t0 = performance.now();
+    const programasAntes = renderer.info.programs?.length ?? 0;
+    const guardaPos = camera.position.clone();
+    const guardaQuat = camera.quaternion.clone();
+    const tmpLook = new THREE.Vector3();
+    let omitidas = 0;
+    try {
+      for (let i = 0; i < vistasPrecarga.length; i++) {
+        const v = vistasPrecarga[i]!;
+        if (v.pos) {
+          camera.position.set(v.pos[0], v.pos[1], v.pos[2]);
+          camera.lookAt(tmpLook.set(v.look![0], v.look![1], v.look![2]));
+          camera.updateMatrixWorld(true);
+        } else {
+          /*
+           * Vista de juego. La cámara aún no se ha colocado NUNCA a estas alturas:
+           * `start()` es quien llama a `updateCamera`. Sin esto, la primera pasada
+           * miraría desde el origen (0, 0, 0), que no es el encuadre real — para
+           * `compile()` da igual porque no recorta por frustum, pero para el
+           * dibujado de calentamiento sí importa.
+           */
+          updateCamera(0, true);
+        }
+        onProgress(PRECARGA_0 + (PRECARGA_TEX - PRECARGA_0) * (i / vistasPrecarga.length));
+        // Se cede ANTES de compilar: es el fotograma en el que la barra se pinta
+        // con el progreso de esta vista. Compilar bloquea (el enlace es síncrono
+        // si no hay `KHR_parallel_shader_compile`), así que sin esta cesión media
+        // carga se iría a 0 % durante un rato largo.
+        await nextFrame();
+        // Una vista que revienta (material corrupto, error de driver) no puede
+        // llevarse por delante las otras seis: se cuenta y se sigue.
+        try {
+          if ((await compilarVista()) === 'techo') {
+            omitidas++;
+            console.warn(`[preload] vista "${v.nombre}": más de ${VISTA_TECHO_MS} ms de enlace, se abandona`);
+          }
+        } catch (e) {
+          omitidas++;
+          console.warn(`[preload] vista "${v.nombre}": fallo al compilar, se sigue`, e);
+        }
+        if (prewarm) {
+          // Un dibujado de verdad con flush: es lo que calienta los búferes de
+          // geometría y la subida de texturas, que `compile()` no toca. La vista de
+          // juego entra también, porque la de `bakeShadows()` se dibujó desde el
+          // origen y no calentó los suyos.
+          const t1 = performance.now();
+          renderer.render(scene, camera);
+          gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+          console.info(`[preload] dibujado de calentamiento ${v.nombre}: ${(performance.now() - t1).toFixed(1)} ms`);
+        }
+      }
+    } finally {
+      /*
+       * La cámara vuelve a donde estaba SIEMPRE, incluso si el recorrido ha
+       * reventado a la mitad. Dejarla en el plano de una sección sería el peor
+       * de los estados intermedios: el juego entraría mirando al banquillo, en
+       * modo 'play', con el input dado — o sea, jugando, pero en otro sitio.
+       * (`start()` vuelve a colocarla igual, pero que el estado de partida no
+       * dependa de un `finally` del bucle anterior es mejor.)
+       */
+      camera.position.copy(guardaPos);
+      camera.quaternion.copy(guardaQuat);
+      camera.updateMatrixWorld(true);
+    }
+    const programasDespues = renderer.info.programs?.length ?? 0;
+    console.info(
+      `[preload] ${vistasPrecarga.length} vistas · ${hayCompileAsync ? 'compileAsync' : 'compile (sin compileAsync)'} · ` +
+        `programas ${programasAntes} -> ${programasDespues}` +
+        (omitidas ? ` · ${omitidas} OMITIDAS por techo` : '') +
+        ` · ${(performance.now() - t0).toFixed(0)} ms`,
+    );
+  }
+
+  /*
+   * SUBIDA DE TEXTURAS A LA GPU.
+   *
+   * `compileAsync` calienta PROGRAMAS y nada más. Los bytes van aparte: los sube
+   * el primer dibujado en el que aparece cada textura, o sea DENTRO del juego,
+   * y es la otra mitad del tirón de arranque. Un programa que se enlaza tarda
+   * unos pocos milisegundos y se nota poco; un `texImage2D` de un lienzo de
+   * ~900x600 con mipmaps y anisotropía, más la CPU de generateMipmap, se nota
+   * mucho más — y aquí se paga con la barra delante, no con el jugador moviéndose.
+   *
+   * `renderer.initTexture(tex)` es exactamente la llamada que hará ese dibujado
+   * (va a `textures.setTexture2D`), sólo que anticipada. NO resubida lo que ya
+   * está subido: `setTexture2D` compara la versión de la textura con la que tiene
+   * el contexto, así que el horneado de sombras ya subió las suyas y esta pasada
+   * sólo paga las que faltaban.
+   *
+   * No se suben los BÚFERES de geometría aquí: eso es lo que hace el dibujado de
+   * calentamiento de la pasada anterior, una vez por vista, y ya forma parte del
+   * arranque por defecto.
+   *
+   * EXCEPCIÓN A CONOCER: las dos texturas que se repintan EN JUEGO —el marcador
+   * del techo y su `flash()` de "PERFECTO"— marcan `needsUpdate` cada vez que
+   * cambian, y entonces sí se vuelven a subir. Es intencionado y se queda así:
+   * repintar un panel de 336x112 en el instante en que se anota es correcto, y
+   * hacerlo antes significaría mostrar un número viejo o pagar la subida de una
+   * textura que aún no tiene el texto que le toca. Todo lo demás se sube una vez.
+   */
+  const esTextura = (v: unknown): v is THREE.Texture =>
+    typeof v === 'object' && v !== null && (v as THREE.Texture).isTexture === true;
+
+  /** Píxeles de la imagen de una textura, o 0 si no los tiene legibles (comprimida). */
+  function pixeles(t: THREE.Texture): number {
+    const img = t.image as { width?: number; height?: number } | undefined;
+    return typeof img?.width === 'number' && typeof img?.height === 'number' ? img.width * img.height : 0;
+  }
+
+  /**
+   * Todas las texturas que la escena puede llegar a dibujar, sin repetir.
+   *
+   * Se recogen por Material y no "a ojo" en el código porque una textura que se
+   * meta mañana en el dorsal, en una red o en un cartel tiene que entrar sola en
+   * el paseo, sin que nadie se acuerde de añadirla a una lista.
+   *
+   * Se miran DOS sitios de cada material, porque hay dos formas de llevar una
+   * textura: como propiedad con nombre propio (`map`, `emissiveMap`, …, que es
+   * el 99 % de este proyecto: todo son `canvasTexture`) y dentro de `uniforms`,
+   * que es como viajan en un `ShaderMaterial` o en un `onBeforeCompile`. En este
+   * repo lo segundo no se usa, pero el recorrido cuesta tres líneas y evita el
+   * fallo silencioso si algún día aparece.
+   */
+  function texturasDe(raiz: THREE.Object3D): THREE.Texture[] {
+    const vistas = new Set<THREE.Texture>();
+    raiz.traverse((o) => {
+      // Sólo lo que de verdad llega a un `draw`: una malla, unas puntos, una
+      // línea o un sprite. Un `Object3D` a secas no tiene material.
+      if (!(o as THREE.Mesh).isMesh && !(o as THREE.Points).isPoints && !(o as THREE.Line).isLine && !(o as THREE.Sprite).isSprite) return;
+      const bruto = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+      if (!bruto) return;
+      for (const mat of Array.isArray(bruto) ? bruto : [bruto]) {
+        if (!mat) continue;
+        for (const valor of Object.values(mat as unknown as Record<string, unknown>)) {
+          if (esTextura(valor)) vistas.add(valor);
+        }
+        const u = (mat as THREE.ShaderMaterial).uniforms as Record<string, { value: unknown }> | undefined;
+        if (u) {
+          for (const clave of Object.keys(u)) {
+            const v = u[clave]?.value;
+            if (esTextura(v)) vistas.add(v);
+          }
+        }
+      }
+    });
+    return [...vistas];
+  }
+
+  async function precargaTexturas(): Promise<void> {
+    const texs = texturasDe(scene);
+    const t0 = performance.now();
+    let subidas = 0;
+    let pix = 0;
+    const saltadas: string[] = [];
+    for (let i = 0; i < texs.length; i++) {
+      const t = texs[i]!;
+      // El techo se comprueba ANTES de empezar la siguiente: una subida es
+      // síncrona y no se puede interrumpir a mitad, así que el peor caso es
+      // pasarse por una textura, nunca por el presupuesto entero.
+      if (performance.now() - t0 > TEXTURAS_TECHO_MS) {
+        saltadas.push(...texs.slice(i).map((x) => `${x.name || x.type} ${x.image?.width}x${x.image?.height}`));
+        break;
+      }
+      try {
+        renderer.initTexture(t);
+        subidas++;
+        pix += pixeles(t);
+      } catch (e) {
+        saltadas.push(`${t.name || t.type} (${(e as Error)?.message ?? 'error'})`);
+        console.warn(`[preload] no se pudo subir la textura ${t.name || t.type}; el juego sigue`, e);
+      }
+      // Se cede de dos en dos: subir son varios `texImage2D` seguidos y, sin
+      // ceder, la barra se congela durante todo el paseo. Dos texturas por
+      // fotograma mantiene el pintado sin alargar la carga de forma sensible.
+      if (i % 2 === 1) {
+        onProgress(PRECARGA_TEX + (1 - PRECARGA_TEX) * ((i + 1) / texs.length));
+        await nextFrame();
+      }
+    }
+    console.info(
+      `[preload] texturas: ${subidas}/${texs.length} subidas · ${(pix / 1e6).toFixed(2)} Mpx · ` +
+        `${(performance.now() - t0).toFixed(0)} ms` +
+        (saltadas.length ? ` · OMITIDAS: ${saltadas.join(', ')}` : ''),
+    );
+  }
+
+  /*
+   * LA ESCALA DE PARTIDA, MEDIDA.
+   *
+   * El problema que esto arregla: con el techo en `devicePixelRatio`, la calidad
+   * adaptativa DESCUBRE sola lo que la máquina puede, y en el equipo del
+   * propietario eso son 7 s de cascada 1,0 → 0,9 → 0,8 → 0,7 con la imagen
+   * borrosa, que es lo que se ha reportado más de una vez.
+   *
+   * Ya no se adivina con el nombre de la GPU: se MIDE. Y la medida sale gratis,
+   * porque la precarga acaba de dibujar las siete vistas y, con eso, la escena
+   * está calentada de verdad: los programas están enlazados, las texturas
+   * subidas y los búferes de geometría en la GPU. Un fotograma medido AHORA, en
+   * el encuadre real de juego, es el coste de régimen de esa máquina.
+   *
+   * DEL COSTE A LA ESCALA. El fotograma se comporta como
+   *
+   *     t = A + B·s²
+   *
+   * con `A` fijo (CPU, vértices, envío de dibujo) y `B·s²` la parte que depende
+   * de la resolución. De las dos constantes se ha medido la mezcla, no cada una:
+   * en la máquina de referencia el reparto es de un 30 % fijo y un 70 %
+   * proporcional, y se usa ese 30/70 como estimación. La escala que deja el
+   * fotograma en el presupuesto de 60 fps sale de despejar:
+   *
+   *     0,3·t + 0,7·t·(s'/s)² <= 16,7  ->  s' = s · raiz((16,7 - 0,3·t) / 0,7·t)
+   *
+   * QUE NO ES UN MODELO EXACTO, y por eso la decisión no es definitiva: la
+   * calidad adaptativa sigue teniendo todo el mando y corrige en los primeros
+   * segundos. Lo que se compra es que ya no hay que recorrer tres peldaños para
+   * llegar al que la máquina puede sostener.
+   *
+   * SE MIDEN DOS FOTOGRAMAS Y SE QUEDA CON EL MENOR. El primero todavía puede
+   * pagar algún resto de subida (el propio `readPixels` de sincronización cuesta
+   * uno o dos milisegundos, y eso va dentro de la medida), así que el segundo
+   * es mucho más representativo que el peor.
+   *
+   * Con `?escala=N` no se toca nada: es el interruptor para hacer el A/B de la
+   * nitidez inicial a ojo.
+   */
+  async function elegirEscalaInicial(): Promise<void> {
+    if (escalaForzada) {
+      console.info(`[gpu] escala ${pixelRatio} fijada a mano con ?escala; no se mide`);
+      return;
+    }
+    const antes = pixelRatio;
+    try {
+      updateCamera(0, true); // encuadre REAL de juego, no el de la última sección
+      resize();
+      await nextFrame();
+      let mejor = Infinity;
+      for (let i = 0; i < 2; i++) {
+        if (i > 0) await nextFrame();
+        // Drenaje ANTES del reloj y sin cronometrar: vacía la cola para que lo
+        // que se mida sea este fotograma y no el trabajo pendiente (es el mismo
+        // fallo que se corrigió en `frame()`, y por aquí tampoco hay que repetirlo).
+        gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+        const t0 = performance.now();
+        renderer.render(scene, camera);
+        gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+        mejor = Math.min(mejor, performance.now() - t0);
+      }
+      const PRESUPUESTO = 1000 / 60; // 16,7 ms
+      const PARTE_FIJA = 0.3;
+      const margen = PRESUPUESTO - PARTE_FIJA * mejor;
+      // Con margen negativo no hay escala que valga: se va al suelo y se avisa.
+      const s = margen > 0 ? antes * Math.sqrt(margen / ((1 - PARTE_FIJA) * mejor)) : 0;
+      const elegido = clamp(+Math.floor(s * 20) / 20, ESCALA_MIN, ESCALA_MAX);
+      if (elegido < antes - 0.001) {
+        pixelRatio = elegido;
+        techoFallido = elegido; // el techo baja con el punto de partida: la escalada
+        // adaptativa seguirá pudiendo SUBIR sola, con su histéresis y sus
+        // reintentos, si la máquina puede más de lo que dice esta medición.
+        resize();
+        console.info(
+          `[gpu] fotograma medido ${mejor.toFixed(1)} ms a escala ${antes} · ` +
+            `escala de partida ${elegido} (medido, no adivinado: 30 % fijo + 70 % por resolución)`,
+        );
+      } else {
+        console.info(`[gpu] fotograma medido ${mejor.toFixed(1)} ms a escala ${antes} · entra en ${antes}: cabe en el presupuesto`);
+      }
+    } catch (e) {
+      console.warn(`[gpu] no se pudo medir la escala de partida; se entra en ${antes}`, e);
+    }
+  }
 
   bakeShadows();
+  /*
+   * LA PRECARGA NUNCA IMPIDE JUGAR.
+   *
+   * Todo lo de arriba es una optimización: paga trabajo que si no se pagaría
+   * dentro del juego. Si algo de ello falla, se registra y el juego entra IGUAL,
+   * sólo que con un tirón en la primera vez que se vea cada cosa. Envolverlo
+   * aquí es lo que garantiza que la pantalla de carga nunca se queda en negro
+   * por culpa de la precarga (y además es la capa que protege a
+   * `precargaShaders` de volver a dejar la cámara en el plano de una sección).
+   */
+  try {
+    if (sinPrecompile) {
+      console.warn('[preload] OMITIDA (?nopre=1): así se reproduce el síntoma de antes del arreglo');
+    } else {
+      await precargaShaders();
+      await precargaTexturas();
+      await elegirEscalaInicial();
+    }
+  } catch (err) {
+    console.error('[preload] la precarga ha fallado; el juego entra SIN precalentar', err);
+  }
   onProgress(1);
+
+  /*
+   * SONDA DE RENDIMIENTO.
+   *
+   * Existe porque el síntoma es diferencial POR NATURALEZA —una diferencia
+   * entre "la primera vez" y "después"— y las medias del bucle no lo veían: el
+   * coste de compilar se paga en un solo fotograma, y la mediana de la calidad
+   * adaptativa lo esconde por diseño (los 45 primeros fotogramas ni cuentan).
+   *
+   * Una medida de DOS NÚMEROS, y sólo dos, decide la pregunta:
+   *   · `medianaMs` — el intervalo de fotograma de verdad (reloj de pared entre
+   *     `requestAnimationFrame`), no el `dt` recortado a 1/20 que usa el juego;
+   *   · `programasDespues - programasAntes` — cuántos programas se han enlazado
+   *     durante la ventana. `renderer.info.programs` SÓLE crece (los programas se
+   *     quitan en `releaseProgram`, no al reiniciar `info`), así que la diferencia
+   *     es exactamente el número de facturas pagadas en esos segundos.
+   *
+   * Uso (un clic, con el juego ya cargado):
+   *   · CON la precompilación puesta (por defecto): `await __court.diagnosticar()`
+   *     → tres filas con la misma mediana y `nuevos = 0`. Eso es el arreglo
+   *     funcionando.
+   *   · SIN ella (`?nopre=1` al cargar): la fila del medio debe traer
+   *     programas nuevos y, si la hipótesis es la correcta, una mediana
+   *     peor. Ése es el antes/después.
+   */
+  type Sonda = {
+    momento: string;
+    ms: number;
+    fotogramas: number;
+    medianaMs: number;
+    p95Ms: number;
+    peorMs: number;
+    programasAntes: number;
+    programasDespues: number;
+    nuevos: number;
+  };
+
+  /** Programas de shader enlazados hasta ahora. */
+  const programas = (): number => renderer.info.programs?.length ?? 0;
+
+  const percentil = (s: number[], p: number): number =>
+    s.length === 0 ? 0 : s[Math.min(s.length - 1, Math.max(0, Math.round((s.length - 1) * p)))]!;
+
+  /** Mediana de intervalos durante `ms`, con los programas contados a los dos lados. */
+  function sondear(momento: string, ms = 3000): Promise<Sonda> {
+    return new Promise((resolve) => {
+      const programasAntes = programas();
+      const t0 = performance.now();
+      let prev = t0;
+      const inter: number[] = [];
+      const paso = (): void => {
+        const ahora = performance.now();
+        inter.push(ahora - prev);
+        prev = ahora;
+        if (document.hidden) {
+          // Pestaña sin foco: no hay fotogramas y esto no terminaría nunca.
+          console.warn(`[sonda] "${momento}": pestaña oculta, sin medida`);
+          resolve({
+            momento, ms: 0, fotogramas: 0, medianaMs: 0, p95Ms: 0, peorMs: 0,
+            programasAntes, programasDespues: programas(), nuevos: 0,
+          });
+          return;
+        }
+        if (ahora - t0 < ms) {
+          requestAnimationFrame(paso);
+          return;
+        }
+        const s = [...inter].sort((a, b) => a - b);
+        const programasDespues = programas();
+        const r: Sonda = {
+          momento,
+          ms: Math.round(ahora - t0),
+          fotogramas: inter.length,
+          medianaMs: +percentil(s, 0.5).toFixed(2),
+          p95Ms: +percentil(s, 0.95).toFixed(2),
+          peorMs: +percentil(s, 1).toFixed(2),
+          programasAntes,
+          programasDespues,
+          nuevos: programasDespues - programasAntes,
+        };
+        console.info(`[sonda] ${r.momento}: mediana ${r.medianaMs} ms · p95 ${r.p95Ms} ms · programas +${r.nuevos}`);
+        resolve(r);
+      };
+      requestAnimationFrame(paso);
+    });
+  }
+
+  /**
+   * Encuadra una sección sin abrir su panel y sin mover al jugador.
+   *
+   * Sirve para revisar los seis planos de una sentada: abrir la sección de
+   * verdad obliga a caminar hasta ella, y con el renderizado por software
+   * cada paso cuesta segundos.
+   */
+  function encuadrar(id: SectionId): void {
+    sectionCam = id;
+    rotY = SECTION_CAMERA[id].face;
+    updateCamera(0, true);
+  }
+
+  /**
+   * Reproduce el síntoma en tres medidas seguidas y las deja en una tabla.
+   *
+   * No toca la interfaz: el segundo tramo mueve la cámara al encuadre de la
+   * sección y lo deja ahí, que es lo mismo que hace `openSection` cuando se
+   * entra por la zona. Sirve para aislar la parte 3D del efecto; para el
+   * síntoma completo tal y como lo ve el jugador (panel entrando y saliendo,
+   * con su DOM y sus animaciones) hay que hacerlo a mano: abrir una sección,
+   * cerrar y medir con `__court.sondear('...')`.
+   */
+  async function diagnosticar(porVista = 3000): Promise<Sonda[]> {
+    const id = SECTION_IDS[0]!;
+    const salida: Sonda[] = [];
+    const rotYAntes = rotY;
+    salida.push(await sondear('1 · juego (con lo que haya caliente)', porVista));
+    encuadrar(id);
+    salida.push(await sondear(`2 · cámara en ${id}`, porVista));
+    sectionCam = null;
+    rotY = rotYAntes;
+    updateCamera(0, true);
+    salida.push(await sondear('3 · juego otra vez (tras cerrar)', porVista));
+    console.table(salida);
+    console.info(
+      '[diagnosticar] Si la fila 2 queda con `nuevos > 0` y peor mediana que la 1 y la 3, ' +
+        'la culpa es la compilación perezosa de programas y la precompilación de la carga la paga antes.',
+    );
+    return salida;
+  }
+
   // Ganchos de depuración SOLO en desarrollo: Vite los elimina del build.
   // Sirven para medir la escena desde la consola sin abrir el código.
   if (import.meta.env.DEV) {
@@ -1377,17 +3174,120 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
         max: ESCALA_MAX,
         min: ESCALA_MIN,
         techoFallido,
+        techoPermitido: Math.min(ESCALA_MAX, techoFallido),
+        reintentos,
+        fallosConsec,
+        fallosNecesarios: FALLOS_NECESARIOS,
         ventana: hist.length,
         medianaMs: +medianaMs.toFixed(1),
+        p95Ms: +percentilOrdenado(hist, 0.95).toFixed(1),
         costeMs: +costeRender.toFixed(1),
+        costeEscala: escalaMedida,
         desdeCoste,
+        estableSeg: +estableSeg.toFixed(1),
       }),
-      /** Mide el coste real de un fotograma (render + flush) sin tocar la escena. */
+      /**
+       * Mide el coste real de un fotograma (render + flush) sin tocar la escena.
+       *
+       * Drena ANTES de arrancar el reloj, igual que el bucle: si no, el
+       * `readPixels` final se tragaría también la cola pendiente y el número
+       * sería el de la carga, no el del fotograma.
+       */
       costeRender(): number {
+        gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
         const t0 = performance.now();
         renderer.render(scene, camera);
         gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
         return +(performance.now() - t0).toFixed(2);
+      },
+      /*
+       * Programas de shader enlazados hasta ahora. SÓLE crece mientras juegas:
+       * si sube entre dos medidas, es que algo está pagando su primera vez ahí.
+       */
+      programas,
+      /**
+       * Mediana y p95 de los intervalos de fotograma durante `ms` (3 s por
+       * defecto), con los programas contados antes y después. Un clic.
+       */
+      sondear: (momento = 'libre', ms?: number) => sondear(momento, ms),
+      /** Las TRES medidas del síntoma en una tabla: juego → sección → juego. */
+      diagnosticar,
+      /**
+       * Vuelve a pagar la precompilación de la carga desde la consola.
+       *
+       * Devuelve los milisegundos de las SIETE vistas con la caché ya llena:
+       * el trabajo de Three son siete recorridos de escena y siete `getProgram`
+       * que aciertan en la caché. Ese es el techo del coste por vista, y es la
+       * referencia para decidir si el arreglo cabe en la carga —tiene que
+       * caber: es una fracción de fotograma, no un fotograma entero—. Con
+       * `?noprewarm=1` se ve además el coste de cada vista por separado.
+       */
+      precalentar: async (): Promise<number> => {
+        const t0 = performance.now();
+        await precargaShaders();
+        return +(performance.now() - t0).toFixed(1);
+      },
+      /**
+       * Inventario de texturas que la escena puede dibujar, con su tamaño.
+       *
+       * Es el punto de partida de la pregunta "¿se sube todo?": si mañana se
+       * añade una textura a un constructor, sale aquí sin haber que tocar esta
+       * lista (la lista no existe: se recoge de los materiales).
+       */
+      texturas: (): { nombre: string; tipo: THREE.TextureDataType; px: number; w: number; h: number }[] =>
+        texturasDe(scene).map((t) => {
+          const img = t.image as { width?: number; height?: number } | undefined;
+          return {
+            nombre: t.name || '(sin nombre)',
+            tipo: t.type,
+            px: pixeles(t),
+            w: img?.width ?? 0,
+            h: img?.height ?? 0,
+          };
+        }),
+      /**
+       * Vuelve a subir TODAS las texturas y mide cuánto cuesta.
+       *
+       * Necesita `t.needsUpdate = true`: con la textura ya subida, `initTexture`
+       * no hace nada y la medida saldría en 0. Con eso sí se mide el trabajo real
+       * de `texImage2D` + `generateMipmap`, que es el que la precarga de la
+       * carga paga por adelantado. Es la cifra que hace falta para responder a si
+       * el paseo de texturas se paga con creces (y para compararla contra lo que
+       * cuesta el horneado de sombras, que es su hermano).
+       */
+      precalentarTexturas: async (): Promise<number> => {
+        for (const t of texturasDe(scene)) t.needsUpdate = true;
+        const t0 = performance.now();
+        await precargaTexturas();
+        return +(performance.now() - t0).toFixed(1);
+      },
+      /**
+       * Coste de UNA llamada a `hud.layoutLabels`: seis lecturas de `offsetWidth`
+       * que llegan tras las escrituras de estilo del mismo fotograma, o sea el
+       * reflow forzado que el HUD paga en cada uno.
+       *
+       * Se mide en bucle contra el estado de régimen (rótulos ya colocados); la
+       * primera pasada se tira, porque ahí además hay que resolver estilo por
+       * primera vez.
+       *
+       * NO MEDIDO en esta sesión (sin shell): el número sale al llamarlo. Lo que
+       * sí queda verificado leyendo `ui/hud.ts` es que dentro de la llamada la
+       * lectura y la escritura van en dos pasadas separadas, así que el coste es
+       * UN reflow forzado por fotograma y no dos: `placeLabel` escribe estilo y
+       * `layoutLabels` lee, en ese orden y en el mismo fotograma. Cualquier
+       * segundo reflow tendría que venir de otra escritura entre medias
+       * (`hud.showMeter`, `hud.setPrompt`, `hideLabel`) y eso no se puede
+       * confirmar sin medir.
+       */
+      reflowLabels(n = 30): number {
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        hud.layoutLabels(w, h); // calentar: fuera de la medida
+        const t0 = performance.now();
+        for (let i = 0; i < n; i++) hud.layoutLabels(w, h);
+        const ms = (performance.now() - t0) / n;
+        console.info(`[reflow] layoutLabels: ${ms.toFixed(3)} ms por llamada · ${n} llamadas · ${ZONES.length} rótulos`);
+        return +ms.toFixed(3);
       },
       /**
        * Cuenta llamadas de dibujo y triángulos de un fotograma con un contador a
@@ -1447,13 +3347,6 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
       get freeze() { return dbg.freeze; },
       set freeze(v: boolean) { dbg.freeze = v; },
       /**
-       * Encuadra una sección sin abrir su panel y sin mover al jugador.
-       *
-       * Sirve para revisar los seis planos de una sentada: abrir la sección de
-       * verdad obliga a caminar hasta ella, y con el renderizado por software
-       * cada paso cuesta segundos.
-       */
-      /**
        * Distancia al primer obstáculo en la recta entre dos puntos, o
        * `Infinity` si no hay nada en medio.
        *
@@ -1480,11 +3373,8 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
       openSection(id: SectionId, fromZone = true) {
         openSection(id, fromZone);
       },
-      previewSection(id: SectionId) {
-        sectionCam = id;
-        rotY = SECTION_CAMERA[id].face;
-        updateCamera(0, true);
-      },
+      /** Encuadra una sección sin abrir su panel y sin mover al jugador (ver `encuadrar`). */
+      previewSection: encuadrar,
     };
   }
   return {
@@ -1501,6 +3391,40 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
       window.removeEventListener('resize', resize);
       document.removeEventListener('visibilitychange', onVisibility);
       input.dispose();
+      /*
+       * LIBERAR LA GPU, no sólo el contexto.
+       *
+       * `renderer.dispose()` suelta el contexto WebGL, pero las geometrías, los
+       * materiales y las texturas siguen residentes en la memoria del driver hasta
+       * que se llaman sus `dispose()`. Hoy eso no se ve: este `dispose()` no lo
+       * llama nadie —`boot.ts` lo usa como contrato y el respaldo sin WebGL2 se
+       * va con `location.replace`—, así que NO es una medida. Es dejar el
+       * contrato completo para el día que haya un remontaje (cambio de idioma en
+       * caliente, una segunda partida, un HMR de Vite).
+       *
+       * Geometrías, materiales y texturas se comparten entre mallas (los lotes del
+       * fundido, `VOXEL_MATERIAL`, la mancha de contacto), así que algunos
+       * `dispose()` se llaman más de una vez: es inocuo en Three —cada uno sólo
+       * emite su evento— y recorrer el grafo entero cuesta menos que llevar la
+       * cuenta. Lo que NO se alcanza son las texturas que vivan dentro de
+       * `material.uniforms`: en este proyecto los uniformes propios son sólo
+       * escalares (el balanceo del público, la onda de la red), así que no queda
+       * nada fuera; si algún día un material trae textura en un uniforme, esto
+       * hay que ampliarlo a mano.
+       */
+      scene.traverse((o) => {
+        const malla = o as THREE.Mesh;
+        if (!malla.isMesh) return;
+        malla.geometry.dispose();
+        const mats = Array.isArray(malla.material) ? malla.material : [malla.material];
+        for (const mat of mats) {
+          if (!mat) continue;
+          for (const valor of Object.values(mat as unknown as Record<string, unknown>)) {
+            if (valor && (valor as THREE.Texture).isTexture) (valor as THREE.Texture).dispose();
+          }
+          mat.dispose();
+        }
+      });
       renderer.dispose();
     },
   };

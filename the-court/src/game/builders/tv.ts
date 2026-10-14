@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { buildHuman, type HumanRig } from './human';
+import { animateHuman, buildHuman, type HumanRig } from './human';
 import { PALETTE, VOXEL, VoxelWorld, canvasTexture, noCastShadow, voxelGroup } from './util';
 
 export interface InterviewSet {
@@ -131,6 +131,106 @@ export function buildInterviewSet(): InterviewSet {
   noCastShadow(reporter.root);
   noCastShadow(operator.root);
   return { group, reporter, operator, tally: cam.tally, onAir };
+}
+
+/* ===========================================================================
+ * VIDA EN EL PLATÓ
+ * ---------------------------------------------------------------------------
+ * Los dos actores comparten `animateHuman`, que está hecho para el JUGADOR: una
+ * zancada, un braceo en oposición y nada más. En el plató no hay zancada, así que
+ * de sus capas sólo sale la respiración, y el resultado era un reportero y un
+ * operador con la misma quietud de estatua que una figura de la grada.
+ *
+ * Aquí van por encima las CUATRO cosas que hacen que alguien esté de pie
+ * esperando (nada de ellas toca una matriz en CPU de más: son rotaciones de los
+ * pivotes que ya existen, siete números por actor y fotograma).
+ * ========================================================================= */
+
+/**
+ * Reportero: peso de un pie al otro, hombros, respiración y gestos del brazo
+ * LIBRE.
+ *
+ * `habla` (0..1) es lo que separa «de pie en el plató» de «diciendo algo».
+ *
+ * El brazo del micro (`armR`) NO se toca, y es deliberado: el micrófono cuelga
+ * de él (`mic.position` dentro de `armR`) y `main.ts` le pone el ángulo de la
+ * entrevista. Cualquier retoque en ese brazo se traduciría en un micrófono
+ * atravesando la cara, que es el peor sitio donde puede estar. El gesto de la
+ * mano libre (`armL`) es el que se mueve: es la mano que señala, la que apoya
+ * en la cadera, la que acompaña a la frase.
+ *
+ * La inclinación de cabeza va por `torso`, que es el pivote de la cabeza (la
+ * cabeza es hija suya): un cabeceo de 3° se lee a 9 m, que es a la distancia a
+ * que se ve el plató desde el juego.
+ */
+export function animateTvReporter(rig: HumanRig, time: number, habla = 0): void {
+  animateHuman(rig, time, 0, false);
+
+  // Peso de un pie a otro: periodo lento (3,7 s) y 2,5 cm de desplazamiento.
+  // Es lo que separa «plantado» de «apoyado».
+  const peso = Math.sin(time * 1.7);
+  rig.body.position.x = peso * 0.025;
+  // La pierna que carga se estira y la otra se acorta: el peso también se ve en
+  // las rodillas, no sólo en el balanceo de la cadera.
+  rig.legL.rotation.x += peso * 0.05;
+  rig.legR.rotation.x -= peso * 0.03;
+  // Respiración: el torso sube y baja un 1,4 %, un poco más que el jugador,
+  // porque nadie aguanta la respiración con el pecho quieto.
+  rig.torso.scale.y = 1 + Math.sin(time * 2) * 0.014;
+  // Balanceo de hombros, en oposición: si los dos van a la vez, el torso se ve
+  // rígido.
+  rig.armL.rotation.x += Math.sin(time * 0.9 + 1.1) * 0.05;
+  rig.armR.rotation.x += Math.sin(time * 0.9 + 1.1) * 0.05;
+
+  // Gesto del brazo libre. Es un ASENTIR con el brazo, no un ademán grande: a
+  // 9 m un gesto de 0,4 rad son 20 px y ya se ve, uno de 1 rad es un manoteo.
+  rig.armL.rotation.x += habla * (-0.38 + Math.sin(time * 2.6) * 0.13);
+  rig.armL.rotation.z += habla * (0.2 + Math.sin(time * 1.9) * 0.07);
+
+  // Cabeza: asentimiento al hablar (frecuencia de sílaba) y una inclinación
+  // lateral lenta, que es la postura de quien escucha a su propia voz.
+  rig.torso.rotation.x += habla * Math.sin(time * 2.3) * 0.07;
+  /*
+   * Inclinación lateral de cabeza y hombros, con ASIGNACIÓN, no suma.
+   *
+   * `animateHuman` fija `torso.rotation.x` y `.y` en absoluto cada fotograma
+   * pero NO toca `.z`, así que un `+=` aquí iría sumando el valor del fotograma
+   * anterior indefinidamente: el torso se iría girando cada vez más (un paseo
+   * aleatorio que además crece con el frame rate, porque el paso es el mismo
+   * con 60 fps que con 144). Se asigna para que sea una postura, no un acumulador.
+   */
+  rig.torso.rotation.z = Math.sin(time * 1.3) * 0.04 + habla * Math.sin(time * 1.7) * 0.03;
+}
+
+/**
+ * Operador de cámara: de pie junto al trípode, con las manos en la posición de
+ * quien espera el corte.
+ *
+ * No lleva micrófono, así que los dos brazos están libres: uno apoya el cuerpo
+ * en la cadera y el otro se queda sobre el ocular, con un vaivén lento. Es el
+ * mismo esqueleto con otra forma de estar: las mismas cuatro capas de encima
+ * (peso, rodillas, respiración, hombros) y sólo los brazos cambiados.
+ */
+export function animateTvOperator(rig: HumanRig, time: number): void {
+  animateHuman(rig, time, 0, false);
+
+  const peso = Math.sin(time * 1.4 + 0.8);
+  rig.body.position.x = peso * 0.022;
+  rig.legL.rotation.x += peso * 0.04;
+  rig.legR.rotation.x -= peso * 0.025;
+  rig.torso.scale.y = 1 + Math.sin(time * 1.8 + 0.5) * 0.012;
+
+  // Brazo derecho apoyado en la cadera (el del lado del trípode) y el otro
+  // delante, a media altura, como quien sostiene el ocular.
+  rig.armR.rotation.x = -0.45 + Math.sin(time * 0.8) * 0.05;
+  rig.armR.rotation.z = -0.5;
+  rig.armL.rotation.x = -1.1 + Math.sin(time * 1.1 + 2) * 0.07;
+  rig.armL.rotation.z = 0.22;
+  // Mira a donde apunta la cámara, con una deriva mínima. Igual que en el
+  // reportero, `.z` se ASIGNA: `animateHuman` no lo reinicia (ver el comentario
+  // de arriba) y un `+=` aquí lo convertiría en un acumulador.
+  rig.torso.rotation.y = 0.12 + Math.sin(time * 0.5) * 0.05;
+  rig.torso.rotation.z = Math.sin(time * 1.6) * 0.03;
 }
 
 export { onAirTexture };

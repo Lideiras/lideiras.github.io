@@ -154,9 +154,13 @@ function designGrid(v: VoxelWorld): Grid {
  *
  *   y  0.. 2  zapatilla        (3)   <- SIN recortar
  *   y  3.. 9  pierna           (7)   <- recortada
- *   y  8..13  pantalón corto   (6)
- *   y 13..19  torso            (7)   <- recortado
+ *   y  8..12  perneras         (5)
+ *   y 13..14  cinturilla       (2)   <- 2 celdas, no 1
+ *   y 15..19  camiseta         (5)   <- recortada
  *   y 20..47  CABEZA + PELO   (28)  <- 58,3 %
+ *
+ * La frontera entre pantalón y camiseta está en y = 14/15 y NO hay celda
+ * compartida: cada pieza acaba donde empieza la siguiente (ver `SHIRT_Y0`).
  * ------------------------------------------------------------------------- */
 const C = {
   shoeTop: 3,
@@ -166,6 +170,28 @@ const C = {
   torsoTop: 20,
   headTop: 48,
 } as const;
+
+/**
+ * Primera celda de la camiseta, en celdas de diseño.
+ *
+ * El pantalón sube hasta `shortsTop` (14) con su cinturilla de DOS celdas
+ * (13 y 14) y la camiseta empieza una por encima. Antes la camiseta arrancaba
+ * en `shortsTop - 1` (13), es decir, en la MISMA celda que la cinturilla:
+ * pantalón y camiseta ocupaban el mismo volumen.
+ *
+ * Eso es z-fighting puro. Cada pieza se construye en su propio `VoxelWorld` y
+ * sólo descarta las caras internas DENTRO de sí misma, así que las dos
+ * emitían las mismas caras en el mismo plano exacto: la de delante (z = 0,148
+ * m), la de detrás (z = -0,148 m) y los dos costados (x = ±0,222 m) sobre la
+ * celda 13. Son las rayas que parpadeaban en la cintura, que es justo lo que la
+ * cámara ve de frente.
+ *
+ * Ahora las piezas COMPARTEN PLANO de contacto sin duplicar celda: el techo del
+ * pantalón y la base de la camiseta están los dos en y = 15 * 0,037 = 0,555 m
+ * y sus caras quedan enfrentadas, de modo que el backface culling descarta
+ * siempre una de las dos. Ningún par de caras coplanares sobrevive.
+ */
+const SHIRT_Y0 = C.shortsTop + 1; // 15
 
 /**
  * Anchos (en celdas de diseño, contados a cada lado del eje).
@@ -187,6 +213,21 @@ const TX = 6; // semiancho del torso    -> 12 celdas (0,444 m)
  */
 const LEAN_RUN = 0.14;
 const TZ = 4; // semiprofundidad        -> 8 celdas
+
+/**
+ * Pivote de hombro, en celdas de diseño.
+ *
+ * Va PEGADO al torso, no a la altura del semiancho de la cabeza. El pivote
+ * estaba en `HX` (10) y, como la geometría del brazo se escribe en local, la
+ * celda -3 de la mano caía en la celda 7 mientras el torso terminaba en la 5:
+ * entre el hombro y el cuerpo quedaban 1..2 celdas de diseño vacías, es decir
+ * 3,7 cm a la altura de la mano y 7,4 cm a la del antebrazo. El brazo se veía
+ * flotando al lado del cuerpo.
+ *
+ * En la celda 9 la celda -3 cae en la 6, que es justo la cara exterior del
+ * torso (su última celda es la 5): contacto de plano, sin hueco y sin solape.
+ */
+const SHOULDER_X = TX + 3; // 9
 
 /**
  * Bloque con las esquinas verticales recortadas.
@@ -288,14 +329,24 @@ export function buildHuman(o: HumanOptions): HumanRig {
    * el 42 % de la altura, unos brazos largos devolverían la lectura humana. */
   const arm = (side: -1 | 1): THREE.Group => {
     const pivot = new THREE.Group();
-    pivot.position.set(side * u(HX), SHOULDER, 0);
+    pivot.position.set(side * u(SHOULDER_X), SHOULDER, 0);
     const limb = part('arm', (v) => {
-      // Tramos recortados: manga 2, puño 1, antebrazo 2, muñequera 1.
-      v.fillCells(-2, -2, -2, 1, 0, 1, o.jersey); // manga
+      /*
+       * La manga llega a la celda local -3 en vez de a la -2 para ENCAJAR con
+       * el torso: con el pivote en `SHOULDER_X` (9), la celda -3 cae en la 6,
+       * la cara exterior del torso. Con la manga en -2 la celda 6 quedaba
+       * vacía a la altura del hombro y se veía una ranura oscura de 3,7 cm x
+       * 11 cm entre el brazo y el cuerpo. Ahora el hombro apoya en la camisa.
+       *
+       * Es la única pieza que se ensancha: 5 celdas de manga, 4 de antebrazo y
+       * 6 de mano (la mano es la masa gruesa y no se recorta).
+       */
+      v.fillCells(-3, -2, -2, 1, 0, 1, o.jersey); // manga
       v.fillCells(-2, -3, -2, 1, -2, 1, accent); // puño de la manga
       v.fillCells(-2, -5, -2, 1, -3, 1, o.skin); // antebrazo
       v.fillCells(-2, -6, -2, 1, -5, 1, accent); // muñequera
       // MANO: 3 celdas, igual que antes. Es la pieza que NO se recorta.
+      // Su celda -3 queda en la 6 también: la mano apoya en el pantalón.
       block(v, -3, -9, -3, 2, -6, 2, o.skin, 1);
       // Pulgar: una sola pieza, sólo donde la cámara la ve (§8.2).
       v.fillCells(side > 0 ? 2 : -3, -8, 0, side > 0 ? 2 : -3, -7, 2, o.skin);
@@ -311,7 +362,11 @@ export function buildHuman(o: HumanOptions): HumanRig {
 
   /* ── Pantalón corto ────────────────────────────────────────────────────
    * Cinturilla, perneras separadas y franja lateral. Sin el corte central, el
-   * pantalón y las piernas se funden en un bloque vertical (§4.1). */
+   * pantalón y las piernas se funden en un bloque vertical (§4.1).
+   *
+   * El pantalón es el dueño de la frontera de la cintura: llega hasta
+   * `shortsTop` (14) y la camiseta arranca en 15 (`SHIRT_Y0`). La cinturilla
+   * son DOS celdas (13 y 14) porque es una banda, no una línea. */
   const shorts = part('shorts', (v) => {
     const y0 = C.shortsTop - 6;
     block(v, -TX, y0, -TZ, TX - 1, C.shortsTop - 1, TZ - 1, o.shorts, 1);
@@ -324,12 +379,17 @@ export function buildHuman(o: HumanOptions): HumanRig {
   });
 
   /* ── Torso ─────────────────────────────────────────────────────────────
-   * Volumen COMPACTO (8 celdas de alto frente a 14 de cabeza). La guía (§7.1)
-   * pide que el torso sea un prisma corto y que la ropa se explique con piezas
-   * superpuestas, no con anatomía. */
+   * Volumen COMPACTO (5 celdas de camiseta + 2 de cinturilla = 7, frente a 14
+   * de cabeza). La guía (§7.1) pide que el torso sea un prisma corto y que la
+   * ropa se explique con piezas superpuestas, no con anatomía.
+   *
+   * La camiseta empieza en `SHIRT_Y0` (15), una celda por encima de la
+   * cinturilla: es la fila que antes compartían las dos piezas y que
+   * duplicaba las caras en la cintura. El bajo escalonado queda justo encima
+   * del cinturón, que es donde tiene que leerse. */
   const torso = part('torso', (v) => {
-    const y0 = C.shortsTop - 1; // 19
-    const y1 = C.torsoTop - 1; // 27
+    const y0 = SHIRT_Y0; // 15
+    const y1 = C.torsoTop - 1; // 19
     block(v, -TX, y0, -TZ, TX - 1, y1, TZ - 1, o.jersey, 1);
 
     // SIN hombreras. Sobresalían una celda por lado y ensanchaban el torso
@@ -453,11 +513,12 @@ export function buildHuman(o: HumanOptions): HumanRig {
      *
      * El dorsal colgaba medio bloque por encima del hombro (`u(shortsTop + 3)`),
      * así que su borde superior asomaba por encima de la tela y el número se leía
-     * descentrado. La camiseta va de `shortsTop - 1` a `torsoTop - 1` celdas, es
-     * decir a la altura media (shortsTop + torsoTop) / 2, y el plano mide 8 celdas
-     * de alto, exactamente la camiseta: centrarlo la cubre entera.
+     * descentrado. La camiseta va de `SHIRT_Y0` a `C.torsoTop` celdas, es decir
+     * a la altura media (SHIRT_Y0 + torsoTop) / 2, y el plano mide 5,2 celdas de
+     * alto, justo lo que queda de camiseta: centrarlo lo cubre entero sin que
+     * el borde se salga por abajo encima de la cinturilla.
      */
-    const centroCamiseta = u((C.shortsTop - 1 + C.torsoTop) / 2) - HIP;
+    const centroCamiseta = u((SHIRT_Y0 + C.torsoTop) / 2) - HIP;
     // La espalda del torso está en z = -TZ celdas; el plano va 3 mm por detrás
     // para no quedar coplanar y provocar z-fighting (§15).
     plane.position.set(0, centroCamiseta, u(-TZ) - 0.003);
@@ -466,6 +527,140 @@ export function buildHuman(o: HumanOptions): HumanRig {
   }
 
   return { root, body, lean, torso, armL, armR, legL, legR };
+}
+
+/** Frecuencia del regate, en Hz del reloj del personaje. */
+export const REGATE_HZ = 11;
+
+/**
+ * ALTURA normalizada del balón en el regate: 0 en el suelo, 1 en lo alto del
+ * bote. k ∈ [0, 1].
+ *
+ * Vive aquí, y no en el `main`, porque la fase del bote y la del brazo que
+ * empuja TIENEN que ser la MISMA: si el brazo bajara con otro ritmo, se vería
+ * empujando cuando el balón ya está subiendo. Compartiendo la función, no hay
+ * forma de que se desincronicen.
+ *
+ * `handSide` NO cambia el resultado, y es a propósito: el valor absoluto de un
+ * seno es π-periódico, así que `|sin(x)|` y `|sin(x + π)|` son SIEMPRE iguales
+ * (la fase π se cancela con el valor absoluto). Se conserva el parámetro porque
+ * quien llama pasa la mano que conduce en los dos sitios y así queda explícito
+ * que ambas leen el mismo reloj, que es justo lo que se quiere comprobar.
+ * Antes este comentario prometía un «desfasaje de media fase» en la mano
+ * izquierda que la matemática no puede dar: era un no-op documentado como si
+ * fuera una decisión.
+ */
+export function regateAltura(time: number, _handSide: -1 | 1 = 1): number {
+  return Math.abs(Math.sin(time * REGATE_HZ));
+}
+
+/** Mezcla lineal con peso: `k` = 0 deja `a` intacto, `k` = 1 devuelve `b`. */
+const mix = (a: number, b: number, k: number): number => a + (b - a) * k;
+
+/** Peso de mezcla acotado a 0..1 (una capa de pose nunca "desmezcla"). */
+const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
+
+/* ---------------------------------------------------------------------------
+ * PESOS DE CAPA DE POSE
+ * ---------------------------------------------------------------------------
+ * `poseShoot` y `poseCelebrate` ya no ASIGNAN sobre los huesos: se MEZCLAN
+ * sobre lo que dejara `animateHuman`. Como la mezcla se hace contra un peso,
+ * el bucle tiene que poder SUBIR ese peso de forma continua; si el peso
+ * apareciera de golpe en un fotograma, la mezcla saltaría igual que la
+ * asignación. `mezclaPeso` es el único sitio por el que se mueve un peso, y es
+ * exponencial (`dt`-independiente), de modo que el resultado no depende de los
+ * fotogramas: mismo tiempo total, mismo resultado.
+ * ------------------------------------------------------------------------- */
+
+/** Tasa por defecto de entrada/salida de una capa de pose, en 1/s. */
+export const POSE_TASA = 12;
+
+/**
+ * Suaviza un peso de capa de pose hacia su objetivo, con tasa en 1/s.
+ *
+ * Es un filtro exponencial de primer orden: tras `t` segundos vale
+ * `objetivo - (objetivo - actual) * e^(-tasa * t)`, sea cual sea el `dt` con el
+ * que se haya llamado. Por eso un peso NUNCA da un salto: el cambio por
+ * fotograma está acotado por `|objetivo - actual| * tasa * dt`.
+ */
+export function mezclaPeso(actual: number, objetivo: number, dt: number, tasa: number = POSE_TASA): number {
+  if (dt <= 0) return actual;
+  return actual + (objetivo - actual) * (1 - Math.exp(-tasa * dt));
+}
+
+/**
+ * Duración de la RECOGIDA del balón, en segundos.
+ *
+ * Es el tiempo que tardan las tres cosas que tienen que pasar a la vez —el
+ * balón sube del punto donde estaba a la posición de regate/pecho, los brazos
+ * pasan de braceo a brazos contra el pecho y el gesto de agacharse sube y
+ * vuelve— porque si cada una durara lo suyo se desincronizarían entre sí.
+ */
+export const RECOGE_TIME = 0.3;
+
+/**
+ * Peso del gesto de AGACHARSE a recoger el balón, en función del tiempo
+ * dentro de la ventana de recogida.
+ *
+ * Es una campana: 0 al entrar, 1 en el centro y 0 al salir. El gesto tiene que
+ * empezar y terminar en 0 justamente porque `recoge` se SUMA a los brazos: si
+ * empezara en 1 lo bajaría de golpe (0,55 rad en un fotograma), que es
+ * exactamente el salto que se estaba quejando.
+ *
+ * El máximo de su derivada es `PI / RECOGE_TIME` ≈ 10,5 unidades de peso por
+ * segundo, o sea 0,175 por fotograma a 60 fps: 0,096 rad de brazo, muy por
+ * debajo del braceo normal (0,165 rad por fotograma a 9,9 rad/s).
+ */
+export function recogePeso(t: number): number {
+  if (t <= 0 || t >= RECOGE_TIME) return 0;
+  const u = (Math.PI * t) / RECOGE_TIME;
+  return Math.sin(u) * Math.sin(u);
+}
+
+/**
+ * Peso de la mezcla "brazos contra el pecho" (y de la subida del balón) dentro
+ * de la ventana de recogida.
+ *
+ * `smoothstep` en vez de rampa lineal: en los extremos la derivada es 0, así
+ * que el fotograma en que empieza y el fotograma en que termina el gesto se
+ * quedan pegados a la pose anterior y a la siguiente sin un escalón.
+ */
+export function holdPeso(t: number): number {
+  if (t <= 0) return 0;
+  if (t >= RECOGE_TIME) return 1;
+  const u = t / RECOGE_TIME;
+  return u * u * (3 - 2 * u);
+}
+
+/**
+ * Ajustes de la animación que no se deducen de la velocidad.
+ *
+ * Todos son escalares 0..1 (o -1..1) que `main.ts` lleva y va consumiendo, y
+ * todos tienen valor por defecto neutro: llamar a `animateHuman` con los seis
+ * parámetros de siempre da EXACTAMENTE la misma pose que antes de este cambio.
+ */
+export interface HumanAnimOptions {
+  /** Mano que conduce el regate: +1 derecha (X local), -1 izquierda. */
+  handSide?: -1 | 1;
+  /** 0 = quieto con el balón contra el pecho; 1 = regate a tope. */
+  regate?: number;
+  /** Giro de cabeza al cambiar de mano, -1..1. */
+  giro?: number;
+  /** Reacción de frustración tras fallar, 0..1. */
+  frustracion?: number;
+  /** Gesto de recoger el balón del suelo, 0..1. */
+  recoge?: number;
+  /**
+   * Peso de la pose de "balón contra el pecho", 0..1.
+   *
+   * Es lo que hace que el cambio de `holdingBall` sea una TRANSICIÓN y no un
+   * cambio de rama: el brazo pasa de bracear (`rotation.x` en torno a 0) a
+   * Supporting el pecho (-0,9) mezclando las dos poses con este peso.
+   *
+   * Si no se pasa, vale 1 cuando `holdingBall` y 0 cuando no: llamar como
+   * siempre da exactamente la misma pose que antes.
+   */
+  hold?: number;
 }
 
 /**
@@ -477,10 +672,15 @@ export function buildHuman(o: HumanOptions): HumanRig {
  *  · **Reposo**: respiración, balanceo leve de brazos y un cabeceo lento. Un
  *    personaje perfectamente quieto parece una estatua.
  *  · **Caminar / correr**: zancada y braceo en oposición, con rebote del cuerpo.
- *  · **Sujetando el balón**: los brazos se cierran al pecho.
+ *  · **Sujetando el balón**: los brazos se cierran al pecho; si además está
+ *    regateando (`opts.regate`), la mano que conduce empuja hacia abajo en fase
+ *    con el bote.
+ *  · **Aterrizaje**: `land` es la fuerza de la caída, no un 1 fijo — ver abajo.
  *
  * `speed01` interpola entre reposo y carrera, así que la transición es continua
- * y no hay saltos de pose al empezar a moverse.
+ * y no hay saltos de pose al empezar a moverse. Lo mismo hace `opts.hold` con
+ * el balón en las manos: entrar y salir de esa pose es una mezcla, no un
+ * `if (holdingBall)`.
  */
 export function animateHuman(
   rig: HumanRig,
@@ -489,16 +689,33 @@ export function animateHuman(
   holdingBall: boolean,
   grounded = true,
   /**
-   * Aviso de aterrizaje: 1 justo al tocar suelo, 0 en reposo (fase B).
+   * Aviso de aterrizaje: la fuerza de la caída, 1 en el salto del tiro y 0 en
+   * reposo (fase B).
    *
    * El cuerpo bajaba del salto y se plantaba en seco, como un ascensor. Con esto
    * el torso se hunde 12 cm, las rodillas se flexionan y vuelve en un cuarto de
-   * segundo. Es opcional para no cambiar ninguna llamada existente.
+   * segundo. Ahora `main.ts` lo pasa NORMALIZADO por la velocidad de bajada, así
+   * que caer de frente y rozar el suelo no flexionan lo mismo. Es opcional para
+   * no cambiar ninguna llamada existente.
    */
   land = 0,
+  opts: HumanAnimOptions = {},
 ): void {
   const s = Math.min(1, speed01 * 3); // 0 = quieto, 1 = a tope
   const swing = Math.sin(time * 11) * 0.9 * s;
+  const regate = opts.regate ?? 0;
+  const frustracion = opts.frustracion ?? 0;
+  const recoge = opts.recoge ?? 0;
+  /*
+   * PESO de "el balón está en las manos" (ver `HumanAnimOptions.hold`).
+   *
+   * Antes esto era un `if (holdingBall)`: un cambio de RAMA, y por lo tanto un
+   * salto de un fotograma entero en el momento de recoger el balón (hasta 0,9
+   * rad de brazo, de 0 a -0,9 de golpe). Ahora las dos poses se calculan
+   * siempre y se mezclan con este peso, de modo que el mismo código sirve para
+   * la pose final (peso 1) y para la transición (cualquier valor intermedio).
+   */
+  const hold = clamp01(opts.hold ?? (holdingBall ? 1 : 0));
 
   // Piernas: zancada al moverse, apoyo firme en reposo.
   rig.legL.rotation.x = swing;
@@ -506,16 +723,32 @@ export function animateHuman(
 
   // Brazos: braceo en carrera, balanceo corto en reposo.
   const idleSway = Math.sin(time * 1.7) * 0.05;
-  if (holdingBall) {
-    rig.armL.rotation.x = -0.9 - swing * 0.1;
-    rig.armR.rotation.x = -0.9 + swing * 0.1;
-    rig.armL.rotation.z = 0.12;
-    rig.armR.rotation.z = -0.12;
-  } else {
-    rig.armL.rotation.x = -swing * 0.8 + idleSway * (1 - s);
-    rig.armR.rotation.x = swing * 0.8 - idleSway * (1 - s);
-    rig.armL.rotation.z = 0.06 * (1 - s);
-    rig.armR.rotation.z = -0.06 * (1 - s);
+  {
+    /*
+     * REGATE: el brazo que conduce acompaña al bote (punto A).
+     *
+     * `contacto` vale 1 justo cuando el balón toca el suelo y 0 en lo alto del
+     * bote, porque sale de la MISMA función que dibuja la altura del balón
+     * (`regateAltura`). El brazo empuja hacia abajo, y para ello lo que hace
+     * falta es DISPONERLO más de la vertical: la pose de pecho es
+     * `rotation.x = -0,9` (hacia delante y algo arriba) y el empuje lo lleva
+     * hacia -0,35, que es brazo abajo. Sin compartir la fase, el brazo bajaría
+     * cuando la pelota ya sube y el gesto se leería al revés.
+     *
+     * El otro brazo no se queda clavado: se retira un poco hacia arriba (el
+     * equilibrio al empujar con un solo brazo) y se abre un pelo más.
+     *
+     * El empuje va DENTRO de la pose de pecho, así que la fase se comparte
+     * también durante la recogida: `hold` mezcla las dos poses enteras, con lo
+     * que el brazo y el balón no pueden desfasarse al recogerse el balón.
+     */
+    const contacto = (1 - regateAltura(time, opts.handSide ?? 1)) * regate;
+    const cL = opts.handSide === -1 ? contacto : 0;
+    const cR = opts.handSide === -1 ? 0 : contacto;
+    rig.armL.rotation.x = mix(-swing * 0.8 + idleSway * (1 - s), -0.9 - swing * 0.1 + 0.55 * cL - 0.18 * cR, hold);
+    rig.armR.rotation.x = mix(swing * 0.8 - idleSway * (1 - s), -0.9 + swing * 0.1 + 0.55 * cR - 0.18 * cL, hold);
+    rig.armL.rotation.z = mix(0.06 * (1 - s), 0.12 + 0.1 * cL - 0.05 * cR, hold);
+    rig.armR.rotation.z = mix(-0.06 * (1 - s), -0.12 - 0.1 * cR + 0.05 * cL, hold);
   }
 
   // Inclinación hacia delante al moverse.
@@ -526,23 +759,73 @@ export function animateHuman(
   // el que empujarse.
   rig.lean.rotation.x = LEAN_RUN * s * (grounded ? 1 : 0.35);
 
-  // Cuerpo: rebote al correr, respiración al estar quieto y hundimiento al caer.
+  // Cuerpo: rebote al correr, respiración al estar quieto, hundimiento al caer.
   rig.body.position.y =
-    Math.abs(Math.sin(time * 11)) * 0.06 * s + Math.sin(time * 1.7) * 0.006 * (1 - s) - land * 0.12;
-  // Rodillas: al aterrizar se flexionan y los brazos se abren para equilibrar.
+    Math.abs(Math.sin(time * 11)) * 0.06 * s +
+    Math.sin(time * 1.7) * 0.006 * (1 - s) -
+    land * 0.12 -
+    recoge * 0.05;
+  /*
+   * TRANSFERENCIA DE PESO en reposo (proactivo): 1,5 cm de vaivén lateral.
+   * Un personaje de bloques que sólo sube y baja parece un poste; el peso
+   * corpulento sobre un pie es lo que lo hace estar de pie en vez de montado.
+   * Se anula al correr (ahí manda el rebote vertical) y vale 0 con `time` 0, que
+   * es lo que mantienen las referencias geométricas de `tests/human.test.ts`.
+   */
+  rig.body.position.x = Math.sin(time * 0.55) * 0.015 * (1 - s);
+
+  /*
+   * ABSORCIÓN DE LA CAÍDA (punto B).
+   *
+   * `land` ya no es un 1 fijo sino la velocidad de bajada normalizada, así que
+   * una caída de frente y un roce se hunden distinto. Lo que se mueve:
+   *
+   *  · **Rodillas de verdad**: las dos piernas giran HACIA DELANTE, no de lado.
+   *    Un personaje de un solo hueso por pierna no flexiona: flexiona hundiendo
+   *    la cadera y sacando la rodilla, que es exactamente lo que hace el rig.
+   *  · **Torso por delante**: se echa 0,22 rad al absorber, para que el peso
+   *    vaya a las puntillas y el aterrizaje se lea como una recepción.
+   *  · **Brazos abajo**: se sueltan del pecho hacia la vertical para compensar,
+   *    y es lo que equilibra al cuerpo en una caída de frente.
+   *  · **Aplastado**: 5 % de altura de torso menos. Es lo único que NO es un
+   *    bloque rígido en todo el personaje y dura un cuarto de segundo: se nota y
+   *    no rompe la silueta de voxels.
+   */
   if (land > 0) {
-    rig.legL.rotation.x -= land * 0.5;
-    rig.legR.rotation.x += land * 0.35;
-    rig.armL.rotation.x -= land * 0.4;
-    rig.armR.rotation.x -= land * 0.4;
+    rig.legL.rotation.x -= land * 0.34;
+    rig.legR.rotation.x -= land * 0.28;
+    rig.lean.rotation.x += land * 0.22;
+    rig.armL.rotation.x += land * 0.55;
+    rig.armR.rotation.x += land * 0.55;
   }
-  rig.torso.scale.y = 1 + Math.sin(time * 2.2) * 0.012;
+  rig.torso.scale.y = 1 + Math.sin(time * 2.2) * 0.012 - land * 0.05;
 
   // Cabeza: el pivote es el torso, así que un giro leve ya se lee como «mirar».
-  rig.torso.rotation.y = Math.sin(time * 0.6) * 0.08 * (1 - s);
-  // `poseShoot`/`poseCelebrate` escriben la inclinación del torso y nadie la
-  // devolvía a 0: tras el primer tiro el torso se quedaba torcido para siempre.
+  rig.torso.rotation.y = Math.sin(time * 0.6) * 0.08 * (1 - s) + 0.32 * (opts.giro ?? 0);
+  // `poseShoot`/`poseCelebrate` mezclan la inclinación del torso hacia un valor
+  // absoluto y nadie la devolvía a 0: tras el primer tiro el torso se quedaba
+  // torcido para siempre.
   rig.torso.rotation.x = 0;
+  /*
+   * FRUSTRACIÓN tras fallar (proactivo) y RECOGIDA del balón (proactivo).
+   *
+   * Son las dos únicas reacciones que no dependen del movimiento, así que no
+   * pueden salir de la zancada: se apoyan en los hombros (hombro caído, brazos
+   * pegados al cuerpo) y en la cabeza (mirada al suelo). Sin esto, fallar sólo
+   * producía un número en el marcador.
+   */
+  if (frustracion > 0 || recoge > 0) {
+    // `recoge` POSITIVO: con el balón contra el pecho el brazo está en -0,9
+    // (adelante y arriba) y para agacharse a cogerlo tiene que BAJAR hacia la
+    // vertical, o sea menos negativo. La frustración va al revés: sube los
+    // brazos un poco y los pega al cuerpo, que es el hombro caído.
+    rig.armL.rotation.x += frustracion * 0.22 + recoge * 0.55;
+    rig.armR.rotation.x += frustracion * 0.22 + recoge * 0.55;
+    rig.armL.rotation.z += frustracion * 0.16;
+    rig.armR.rotation.z -= frustracion * 0.16;
+    rig.torso.rotation.x = frustracion * 0.2 + recoge * 0.32;
+    rig.body.position.y -= frustracion * 0.02;
+  }
 
   // En el aire las piernas se recogen: sin esto el salto parece un ascensor.
   if (!grounded) {
@@ -553,26 +836,46 @@ export function animateHuman(
   }
 }
 
-/** Brazos arriba al cargar el tiro. k ∈ [0, 1]. */
+/**
+ * Capa de POSE DE TIRO: brazos arriba. k ∈ [0, 1] es a la vez el peso de la
+ * mezcla y la altura de la postura.
+ *
+ * No ASIGNA los huesos: los MEZCLA con lo que dejara `animateHuman`. Con k = 1
+ * el resultado es idéntico al de antes (asignar), pero con k < 1 la capa se
+ * insinúa sobre la pose base en vez de pisarla, y k = 0 no hace nada. Eso es lo
+ * que quita el salto: al empezar a cargar, al soltar el tiro y al terminar el
+ * seguimiento, el peso se mueve con `mezclaPeso` y la pose acompaña.
+ */
 export function poseShoot(rig: HumanRig, k: number): void {
+  const w = clamp01(k);
+  if (w <= 0) return;
   // -1,2 a -1,95 rad. Subir más los brazos lleva el balón a la altura del
   // rostro y, con una cabeza que ocupa la mitad del personaje, lo tapa entero.
-  const a = -1.2 - k * 0.75;
-  rig.armL.rotation.x = a;
-  rig.armR.rotation.x = a;
-  rig.armL.rotation.z = 0.1;
-  rig.armR.rotation.z = -0.1;
+  const a = -1.2 - w * 0.75;
+  rig.armL.rotation.x = mix(rig.armL.rotation.x, a, w);
+  rig.armR.rotation.x = mix(rig.armR.rotation.x, a, w);
+  rig.armL.rotation.z = mix(rig.armL.rotation.z, 0.1, w);
+  rig.armR.rotation.z = mix(rig.armR.rotation.z, -0.1, w);
   // La cabeza acompaña al balón: mirar arriba es lo que vende el gesto.
-  rig.torso.rotation.x = -0.12 * k;
+  rig.torso.rotation.x = mix(rig.torso.rotation.x, -0.12 * w, w);
 }
 
-/** Celebración: brazos en alto y pequeños saltos. k ∈ [0, 1]. */
+/**
+ * Capa de CELEBRACIÓN: brazos en alto y pequeños saltos. k ∈ [0, 1].
+ *
+ * Mezcla como `poseShoot`, por el mismo motivo. El rebote es la única parte que
+ * se SUMA en vez de mezclar: `body.position.y` lo lleva `animateHuman`
+ * (respiración y rebote de la zancada) y pisarlo a un valor absoluto dejaba al
+ * personaje sin respirar durante la celebración; sumando, el salto se apaga
+ * solo con `k` y no aparece de golpe.
+ */
 export function poseCelebrate(rig: HumanRig, time: number, k: number): void {
-  const bounce = Math.abs(Math.sin(time * 6)) * 0.12 * k;
-  rig.armL.rotation.x = -2.6;
-  rig.armR.rotation.x = -2.6;
-  rig.armL.rotation.z = 0.5;
-  rig.armR.rotation.z = -0.5;
-  rig.body.position.y = bounce;
-  rig.torso.rotation.x = 0.1 * k;
+  const w = clamp01(k);
+  if (w <= 0) return;
+  rig.armL.rotation.x = mix(rig.armL.rotation.x, -2.6, w);
+  rig.armR.rotation.x = mix(rig.armR.rotation.x, -2.6, w);
+  rig.armL.rotation.z = mix(rig.armL.rotation.z, 0.5, w);
+  rig.armR.rotation.z = mix(rig.armR.rotation.z, -0.5, w);
+  rig.body.position.y += Math.abs(Math.sin(time * 6)) * 0.12 * w;
+  rig.torso.rotation.x = mix(rig.torso.rotation.x, 0.1 * w, w);
 }

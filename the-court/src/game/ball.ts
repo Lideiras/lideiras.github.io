@@ -53,8 +53,12 @@ export class Ball {
     for (let i = 0; i < n; i++) this.integrate(h);
     this.age += dt;
     this.object.position.copy(this.pos);
-    this.object.rotation.x += this.vel.z * dt * 3;
-    this.object.rotation.z -= this.vel.x * dt * 3;
+    // El giro del balón ya no vive aquí. Antes eran estas dos sumas de Euler
+    // (`rotation.x += vel.z*dt*3`), que depended del frame rate y no rodaban:
+    // el eje de una esfera que rueda es horizontal (`up x velocidad`), no los
+    // ejes de la velocidad. Ahora lo calcula `spinBall()` en `main.ts`, que
+    // multiplica un cuaternión sobre el que YA hay, de modo que el giro
+    // acumula de verdad en vez de fijarse en el último fotograma.
   }
 
   private integrate(dt: number): void {

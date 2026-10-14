@@ -54,16 +54,49 @@ async function start(lang: Lang): Promise<void> {
   try {
     // El código 3D se descarga SOLO ahora, después de elegir idioma
     const { createGame } = await import('./game/main');
+    /*
+     * La pantalla de carga no es sólo "bajar cosas": dentro de `createGame` hay
+     * trabajo que no se ve en ninguna parte. Lo que más ha crecido es la
+     * PRECARGA (ver el bloque en `game/main.ts`), que paga aquí, con la barra por
+     * delante, todo lo que si no se pagaría dentro del juego con el jugador
+     * moviéndose y la cámara siguiendo — que es justo lo que se nota como tirón.
+     * Son dos cosas distintas y las dos están ahí: los PROGRAMAS de shader
+     * (`compileAsync`, que compila y no dibuja) y los BYTES de las texturas
+     * (`initTexture`, que `compileAsync` no toca). Sumadas a `bakeShadows()`, que
+     * ya estaba, cubren el arranque entero.
+     *
+     * Por eso `onProgress` tiene que seguir respondiendo en cada fase aunque el
+     * trabajo sea bloqueante: `createGame` cede un fotograma (`nextFrame()`) antes
+     * de cada compilación y de cada dos texturas, y esta barra es lo que se pinta
+     * en ese hueco. Si algún día `loader.hidden = true` se adelantase a
+     * `createGame`, se perdería justamente ese aviso.
+     */
     const game = await createGame({
       canvas,
       onProgress: (p) => {
         fill.style.width = `${Math.round(p * 100)}%`;
       },
     });
+    /*
+     * A partir de aquí el juego YA EXISTE, y esa es la línea que separa los dos
+     * fallos que pueden darse: lo que pasa antes (descargar, construir, precargar)
+     * no ha podido cargar el juego, y lo que pasa después ha petado el arranque.
+     *
+     * El respaldo a la versión clásica es para el primer caso. Y es una decisión
+     * de `createGame`, no de este fichero, que la precarga no pueda acabar en
+     * él: la precarga va envuelta en su propio `try/catch` y registra lo que se
+     * salta, precisamente para que un fallo de calentamiento no se confunda con
+     * un fallo de carga. Aquí sólo queda la red de seguridad de siempre.
+     */
     loader.hidden = true;
     game.start();
   } catch (err) {
     console.error(err);
+    // Se esconde la barra ANTES de navegar: si la redirección tarda (red lenta,
+    // caché fría de `/classic/`), el jugador se queda mirando una barra parada en
+    // el 43 % sin explicación. Sin pantalla de carga ya sólo queda el mensaje de
+    // la versión clásica, que al menos dice dónde está.
+    loader.hidden = true;
     location.replace('/classic/');
   }
 }

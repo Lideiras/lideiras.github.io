@@ -12,6 +12,17 @@
   --bg: #0b1020;
   --panel: #111a33;
   --panel-2: #1b2748;
+  /* Superficie de la TARJETA de sección: el mismo azul de --panel pero con
+   * alfa, para que la pista se vea (desenfocada) por detrás. El 80 % es el
+   * mínimo que mantiene el contraste AA del texto de cuerpo incluso contra un
+   * píxel blanco de la escena: compuesto da #3F4556, y contra ese fondo el
+   * --text (#f1f5f9) queda en 8.7:1 y el --muted del panel en 5.2:1.
+   * --panel-solid es el mismo tono ya opaco: lo usan las superficies DE LECTURA
+   * (cabecera, barra de pestañas, fichas), donde una Alfa se leería como un
+   * fallo de contraste o, en el caso de la barra pegajosa, dejaría pasar el
+   * texto que hay debajo. */
+  --panel-glass: rgba(15, 23, 44, .80);
+  --panel-solid: #131c36;
   --line: #3c4a6e;
   --line-hi: #5a6b96;
   --text: #f1f5f9;
@@ -307,25 +318,79 @@ button { font: inherit; cursor: pointer; }
 .btn-round--big { width: 88px; height: 88px; font-size: 1.8rem; }
 .btn-round:active { transform: translate(3px, 3px); box-shadow: 2px 2px 0 var(--shadow); }
 
-/* Paneles */
-.panel { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: rgba(5, 8, 18, .72); padding: 12px; }
+/* ── Paneles: la tarjeta flota sobre la pista ─────────────────────────────
+ * Tres decisiones:
+ *
+ * 1) El velo pasa de PLANO a viñeta. A .72 opaco por igual toda la escena
+ *    quedaba aplana y la pista desaparecía. Ahora la sombra se concentra donde
+ *    está la tarjeta y se abre hacia los bordes, que es lo que da la sensación
+ *    de «ventana» en vez de «muro».
+ * 2) La tarjeta tiene alfa real + `backdrop-filter`. Sin radio, como todo lo
+ *    demás del proyecto: el píxel se mantiene en el marco, la sombra dura
+ *    desplazada y el filo de acento; la profundidad la pone el desenfoque.
+ * 3) El contenedor reserva el borde del HUD (barra de botones arriba, récord y
+ *    medidor abajo) mediante relleno, así que la tarjeta NO puede quedar debajo
+ *    de ninguno de ellos por muy larga que sea la sección.
+ */
+.panel {
+  --gap: clamp(8px, 2vmin, 18px);
+  --top-res: 68px;          /* 12px de margen + 44px de botón + 12px de aire */
+  --bot-res: calc(56px + 14dvh); /* récord abajo-derecha + medidor abajo-centro */
+  position: fixed; inset: 0; z-index: 30;
+  display: grid; place-items: center;
+  padding:
+    calc(var(--gap) + env(safe-area-inset-top, 0px) + var(--top-res))
+    calc(var(--gap) + env(safe-area-inset-right, 0px))
+    calc(var(--gap) + env(safe-area-inset-bottom, 0px) + var(--bot-res))
+    calc(var(--gap) + env(safe-area-inset-left, 0px));
+  background: radial-gradient(125% 95% at 50% 50%,
+    rgba(4, 7, 16, .60) 0%, rgba(4, 7, 16, .40) 48%, rgba(4, 7, 16, .10) 100%);
+}
 .panel__card {
-  width: min(920px, 100%); max-height: 88dvh;
+  position: relative;
+  width: min(920px, 100%);
+  max-height: min(100%, 72dvh);
+  min-height: 0;
   display: flex; flex-direction: column;
-  background: var(--panel);
-  border: 4px solid var(--line-hi);
-  box-shadow: 10px 10px 0 var(--shadow);
+  background: var(--panel-glass);
+  -webkit-backdrop-filter: blur(12px) saturate(115%);
+  backdrop-filter: blur(12px) saturate(115%);
+  border: var(--bw) solid var(--line-hi);
+  /* La sombra dura desplazada no se quita (es la firma del proyecto); se le
+     suma una difusa profunda que es la que despega la tarjeta de la pista. */
+  box-shadow:
+    10px 10px 0 rgba(5, 8, 18, .55),
+    0 26px 60px -14px rgba(0, 0, 0, .85),
+    0 8px 20px -6px rgba(0, 0, 0, .6);
   overflow: hidden;
+  animation: panel-in .18s ease-out;
+}
+@keyframes panel-in { from { opacity: 0; transform: translateY(10px); } }
+/* Respaldo: sin `backdrop-filter` la tarjeta se vuelve casi opaca en lugar de
+   dejar pasar texto de la pista. Con #131c36 el --text queda en 15:1. */
+@supports not ((backdrop-filter: blur(2px)) or (-webkit-backdrop-filter: blur(2px))) {
+  .panel__card { background: var(--panel-solid); }
+}
+/* Filo de acento arriba: separa la tarjeta del fondo sin recurrir al radio y
+   fija de entrada la jerarquía (borde > título > pestañas > cuerpo). */
+.panel__card::before {
+  content: ''; position: absolute; inset: 0 0 auto 0; height: 3px;
+  background: var(--accent); pointer-events: none; z-index: 1;
 }
 .panel__head {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 1rem 1.25rem;
-  border-bottom: 4px solid var(--line-hi);
-  background: var(--panel-2);
+  display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+  padding: .85rem 1.1rem;
+  border-bottom: var(--bw) solid var(--line-hi);
+  background: var(--panel-2); /* opaco a propósito: es superficie de lectura */
+  flex: none;
 }
-.panel__head h2 { margin: 0; font-family: var(--display); font-size: 1.15rem; letter-spacing: .08em; color: var(--accent); }
+.panel__head h2 {
+  margin: 0; font-family: var(--display);
+  font-size: clamp(1.1rem, 1.2vmin + .9rem, 1.5rem);
+  letter-spacing: .08em; color: var(--accent);
+}
 .panel__close {
-  width: 44px; height: 44px;
+  width: 44px; height: 44px; flex: none;
   border: var(--bw) solid var(--line-hi); border-radius: 0;
   background: var(--panel); color: var(--text);
   box-shadow: 4px 4px 0 var(--shadow); font-size: 1rem;
@@ -335,16 +400,33 @@ button { font: inherit; cursor: pointer; }
  * propio margen. Así la barra de pestañas puede quedarse pegada al borde de
  * arriba al hacer scroll (`position: sticky`) sin que se cuele texto por la
  * franja de relleno, que es lo que pasaría con el relleno en el contenedor.
+ *
+ * `--muted` se re-declara aquí, y sólo aquí: contra el fondo translúcido de la
+ * tarjeta el gris de raíz se baja a 4.1:1, justo por debajo del AA de texto
+ * normal, y el párrafo plegado de cada proyecto y la línea de organización de
+ * cada hito lo usan. Con #b3c0d9 ese mismo texto queda en 5.3:1 incluso contra
+ * un píxel blanco de la pista.
  */
-.panel__body { --pad: 1.25rem; padding: 0 var(--pad) 2.5rem; overflow: auto; }
+.panel__body {
+  --pad: clamp(1rem, 2.6vmin, 1.35rem);
+  --muted: #b3c0d9;
+  padding: 0 var(--pad) 2rem;
+  overflow-y: auto; overflow-x: hidden; /* nunca hay scroll horizontal */
+  min-height: 0; /* hijo flex: sin esto no encoge y empuja la cabecera fuera */
+}
 .panel__body > :first-child { margin-top: var(--pad); }
 .panel__body h3 { margin: 0 0 .4rem; font-family: var(--display); letter-spacing: .04em; }
 
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; }
+/* `min(...)` en el `minmax` es lo que impide el scroll horizontal: sin él, una
+   columna de 260px dentro de un cuerpo más estrecho que eso no baja de 260 y
+   desborda (pasaba a partir de ~340px de ancho de tarjeta). */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 1rem; }
 .card {
   border: var(--bw) solid var(--line);
   box-shadow: 5px 5px 0 var(--shadow);
-  padding: 1rem; background: var(--panel-2);
+  /* Ficha de lectura: se mantiene casi opaca (.92) para que el texto no tenga
+     que competir con lo que hay de pista detrás. */
+  padding: 1rem; background: rgba(30, 42, 76, .92);
 }
 .card header { display: flex; justify-content: space-between; gap: .5rem; align-items: baseline; }
 .chips { display: flex; flex-wrap: wrap; gap: .4rem; margin: .5rem 0 0; }
@@ -352,9 +434,12 @@ button { font: inherit; cursor: pointer; }
 .lead { font-size: 1rem; }
 
 /* Fila de skill: nombre · barra · número. El número está porque una barra de
-   10 muescas se lee a bulto; con la cifra al lado no hay que contar píxeles. */
-.stat { display: grid; grid-template-columns: minmax(7rem, 11rem) 1fr 3.2rem; gap: .8rem; align-items: center; margin: .5rem 0; }
-.stat__name { font-family: var(--font-body); }
+   10 muescas se lee a bulto; con la cifra al lado no hay que contar píxeles.
+   `minmax(0, 1fr)` + `min-width: 0` evitan que un nombre largo (un framework
+   con guion largo) desborde la fila en móvil. */
+.stat { display: grid; grid-template-columns: minmax(6rem, 11rem) minmax(0, 1fr) 3.2rem; gap: .8rem; align-items: center; margin: .5rem 0; }
+.stat > * { min-width: 0; }
+.stat__name { font-family: var(--font-body); overflow-wrap: anywhere; }
 .stat__lv { font-family: var(--display); font-size: 1rem; text-align: right; color: var(--text); }
 .stat__lv small { font-size: .68rem; color: var(--muted); }
 
@@ -383,7 +468,7 @@ button { font: inherit; cursor: pointer; }
   border: 4px solid #fff; box-shadow: 5px 5px 0 var(--shadow);
 }
 .highlights { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .8rem; margin: 1rem 0 0; }
-.highlights > div { border: var(--bw) solid var(--line); box-shadow: 4px 4px 0 var(--shadow); padding: .6rem .7rem; background: var(--panel-2); }
+.highlights > div { border: var(--bw) solid var(--line); box-shadow: 4px 4px 0 var(--shadow); padding: .6rem .7rem; background: rgba(30, 42, 76, .92); }
 .highlights dt { color: var(--muted); font-size: .72rem; }
 .highlights dd { margin: 0; font-weight: 700; color: var(--accent); }
 
@@ -417,14 +502,53 @@ input:focus, textarea:focus { border-color: var(--accent); outline: none; }
 .btn:active { transform: translate(3px, 3px); box-shadow: 2px 2px 0 var(--shadow); }
 .btn:disabled { opacity: .55; }
 
-/* Modo entrevista: la tarjeta pasa a "tercio inferior" de TV y deja ver la escena */
+/* Modo entrevista: la tarjeta pasa a "tercio inferior" de TV y deja ver la
+   escena. Comparte el cristal y las reservas del resto de paneles; lo único que
+   cambia es dónde se ancla. El `background: transparent` del contenedor se
+   mantiene (aquí la escena es el propio objeto de la conversación) y el
+   `pointer-events: none` sigue dejando jugar alrededor de la tarjeta. */
 body[data-mode='interview'] .panel { background: transparent; place-items: end start; pointer-events: none; }
-body[data-mode='interview'] .panel__card { pointer-events: auto; width: min(460px, 100%); max-height: 70dvh; }
+body[data-mode='interview'] .panel__card {
+  pointer-events: auto; width: min(460px, 100%);
+  max-height: min(100%, 58dvh);
+}
+
+@media (max-width: 900px) {
+  /* Móvil/tableta en vertical: la tarjeta va centrada y con el límite puesto en
+     píxeles en vez de en rem, para que a 320px no se le queden 0 de hueco. */
+  .panel {
+    --gap: 10px;
+    --top-res: 62px;
+    --bot-res: calc(52px + 13dvh);
+  }
+  .panel__card { width: min(680px, 100%); max-height: min(100%, 74dvh); }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(min(230px, 100%), 1fr)); }
+}
 
 @media (max-width: 700px) {
   body[data-mode='interview'] .panel { place-items: end center; }
-  .stat { grid-template-columns: minmax(5.5rem, 8rem) 1fr 2.6rem; }
+  .stat { grid-template-columns: minmax(5rem, 8rem) minmax(0, 1fr) 2.6rem; }
   .label { font-size: .7rem; }
+}
+
+@media (max-width: 520px) {
+  /* El teléfono en vertical: la tarjeta se despega del borde de arriba (barra
+     de botones) y del inferior (medidor + récord) y nunca pasa de dos tercios
+     de alto, así que la pista —que aquí es lo que se está leyendo de fondo—
+     sigue ocupando la parte baja de la pantalla. */
+  .panel {
+    --gap: 8px;
+    --top-res: 60px;
+    --bot-res: calc(46px + 12dvh);
+  }
+  .panel__card {
+    width: 100%;
+    max-height: min(100%, 66dvh);
+    border-width: 3px;
+    box-shadow: 8px 8px 0 rgba(5, 8, 18, .5), 0 18px 40px -12px rgba(0, 0, 0, .8);
+  }
+  .panel__head { padding: .7rem .9rem; }
+  .panel__body { padding-bottom: 1.5rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -447,8 +571,13 @@ body[data-mode='interview'] .panel__card { pointer-events: auto; width: min(460p
 }
 
 .cv-download__note {
-  font-size: 0.78em;
-  opacity: 0.72;
+  /* Antes .78em (12.5px). Es texto corrido dentro de la tarjeta, así que sube
+     al suelo de 1rem; la jerarquía la da el atenuado, no el tamaño ilegible. */
+  font-size: 1rem;
+  font-family: var(--font-body);
+  line-height: 1.5;
+  color: var(--muted);
+  opacity: .9;
 }
 
 /* ── Récord permanente, abajo a la derecha ─────────────────────────────────
@@ -502,13 +631,21 @@ body[data-mode='interview'] .panel__card { pointer-events: auto; width: min(460p
 /* Barra de pestañas pegajosa: al bajar por una lista larga (diez proyectos,
    once hitos) las pestañas siguen a la vista, así que cambiar de año o de tipo
    de hito no obliga a subir. Los márgenes negativos son para que su fondo tape
-   el ancho completo del panel y no se vea texto pasando por los lados. */
+   el ancho completo del panel y no se vea texto pasando por los lados.
+ *
+ * `background: var(--panel-solid)` (opaco) y no un alfa: es la única pieza que
+ * se superpone al contenido al hacer scroll, así que si fuera translúcida se
+ * leería el texto por detrás de las pestañas. El mismo tono que el vidrio de la
+ * tarjeta hace que no se note el cambio de material, y el `backdrop-filter: none`
+ * evita que el desenfoque de la tarjeta llegue hasta aquí. */
 .tabs__list {
   position: sticky; top: 0; z-index: 2;
   display: flex; flex-wrap: wrap; gap: 6px;
   margin: 0 calc(-1 * var(--pad, 1.25rem)) .8rem;
   padding: .75rem var(--pad, 1.25rem) .7rem;
-  background: var(--panel);
+  background: var(--panel-solid);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
   border-bottom: 3px solid var(--line-hi);
 }
 .tabs__list button {
@@ -551,7 +688,8 @@ body[data-mode='interview'] .panel__card { pointer-events: auto; width: min(460p
 .timeline li h3 { margin: 0; }
 .timeline li p { margin: 0 0 .3rem; }
 .tl__when { font-family: var(--display); font-size: .72rem; letter-spacing: .04em; color: var(--muted); }
-.tl__org { color: var(--muted); font-size: .95rem; }
+/* 1rem, no .95: es texto corrido y el suelo de legibilidad del panel es 1rem. */
+.tl__org { color: var(--muted); font-size: 1rem; }
 
 /* Lista de skills sin viñetas: cada fila ya es una barra. */
 .skills { list-style: none; margin: 0; padding: 0; }
@@ -559,26 +697,42 @@ body[data-mode='interview'] .panel__card { pointer-events: auto; width: min(460p
 /* Cifras del récord: el número manda y la etiqueta sólo lo nombra. */
 .highlights--big dd { font-size: 1.9rem; line-height: 1.15; }
 
-/* Panel lateral en pantallas anchas.
+/* Panel flotando a un lado en pantallas anchas.
  *
- * El panel era modal y a pantalla completa, así que tapaba justo la escena que
- * el jugador acababa de encuadrar para abrirlo (y en la entrevista ya se usaba
- * el patrón contrario, el tercio inferior). A partir de 900 px se ancla a la
- * derecha y la pista se queda a la vista; por debajo sigue centrado, que en
- * móvil una columna estrecha pegada a un lado no se lee mejor. */
+ * Antes era un cajón a la derecha de altura completa y pegado al borde
+ * (`stretch end` + `height: 100dvh` + `padding: 0`), que es justo lo que el
+ * propietario llama «pegado al lateral»: un muro de 620 × toda la pantalla. A
+ * partir de 900 px sigue anclándose a la derecha —la pista se queda a la vista
+ * y el ojo va del cartel a la escena sin travelo—, pero como TARJETA: con hueco
+ * arriba y abajo, marco por los cuatro lados, alto limitado y el velo reducido a
+ * una viñeta descentrada que acompaña a la tarjeta en vez de aplanar la escena.
+ *
+ * La reserva inferior sube a 19dvh porque en horizontal el medidor de tiro
+ * (abajo al centro, a 14% del borde) quedaba justo a la altura de la esquina
+ * inferior de la tarjeta y se transparenta detrás del vidrio. */
 @media (min-width: 900px) {
   .panel {
-    place-items: stretch end; padding: 0;
-    background: linear-gradient(90deg, rgba(5, 8, 18, .35) 0%, rgba(5, 8, 18, .6) 55%, rgba(5, 8, 18, .78) 100%);
+    --gap: clamp(12px, 1.8vw, 26px);
+    --bot-res: calc(58px + 19dvh);
+    place-items: center end;
+    background: radial-gradient(130% 105% at 76% 50%,
+      rgba(4, 7, 16, .58) 0%, rgba(4, 7, 16, .32) 55%, rgba(4, 7, 16, .06) 100%);
   }
   .panel__card {
-    width: min(620px, 94vw); height: 100dvh; max-height: 100dvh;
-    border-right-width: 0; box-shadow: 8px 0 0 var(--shadow);
+    width: min(560px, 44vw);
+    max-height: min(100%, 68dvh);
+    /* La sombra dura mira hacia dentro de la pantalla: la tarjeta está a la
+       derecha, así que desplazarla a la izquierda la despega de la pista. */
+    box-shadow:
+      -10px 10px 0 rgba(5, 8, 18, .5),
+      -18px 24px 60px -14px rgba(0, 0, 0, .85),
+      -6px 8px 20px -6px rgba(0, 0, 0, .6);
   }
-  .panel__body { --pad: 1.75rem; }
-  .grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+  .panel__body { --pad: 1.5rem; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); }
 }
 
-/* Con el panel a un lado, el HUD de la derecha (récord) queda debajo: se
-   aparta para que no asome por debajo de la tarjeta. */
-body[data-mode='panel'] .hud__record { opacity: .35; }
+/* El récord del HUD ya NO se atenúa al abrir un panel: la tarjeta vive dentro
+   del rectángulo que reserva el relleno de `.panel`, así que no queda debajo de
+   él en ninguna anchura. La regla anterior (`opacity: .35`) era el apaño para el
+   cajón a altura completa y se va con él. */

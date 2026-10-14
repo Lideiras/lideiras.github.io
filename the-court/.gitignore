@@ -2,3 +2,7 @@ node_modules
 dist
 .env
 public/classic/index.html
+# Andamiaje de coordinación de agentes (no forma parte del juego)
+handoff.md
+tasks.json
+trace.jsonl
