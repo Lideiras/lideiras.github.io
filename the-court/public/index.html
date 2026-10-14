@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Daniel Noya Catoira · Full Stack Developer — My Portfolio</title>
+    <meta name="description" content="Portfolio interactivo de Daniel Noya Catoira, desarrollador full stack y de videojuegos. Juega un partido para descubrir mis proyectos. / Interactive portfolio: play a game to discover my work." />
+    <meta name="theme-color" content="#0b1020" />
+    <link rel="alternate" href="/classic/" title="Classic version" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Daniel Noya Catoira · Full Stack Developer" />
+    <meta property="og:description" content="Portfolio interactivo en forma de partido de baloncesto." />
+    <meta property="og:image" content="/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="module" crossorigin src="/assets/index-DpomDDzq.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-jmeRC5C3.css">
+  </head>
+  <body data-mode="loading">
+    <a class="skip" href="/classic/">Versión clásica / Classic version</a>
+
+    <!--
+      La puerta se pinta sobre la escena en órbita, así que durante la carga tiene
+      que estar FUERA: `data-mode="loading"` en el body la esconde por CSS desde
+      el primer paint. Por eso no lleva `hidden` en el marcado —la ocultan las
+      reglas de `styles.css` según el modo, no un atributo que hay que acordarse
+      de cambiar a mano en el sitio correcto.
+    -->
+    <div id="lang-gate" role="dialog" aria-modal="true" aria-labelledby="lang-title">
+      <div class="gate-card">
+        <h1 id="lang-title">MY PORTFOLIO</h1>
+        <p>Elige tu idioma · Choose your language</p>
+        <!--
+          Controles en ES y EN a la vez, y EN LITERAL, no con `t()`: esta tarjeta
+          se pinta ANTES de que exista idioma elegido. Al elegir, `setLang` dispara
+          `langchange` y el HUD se re-tuenta solo; esta tarjeta desaparece entonces.
+        -->
+        <ul class="gate-keys">
+          <li><kbd>W A S D</kbd> <span>Moverte · Move</span></li>
+          <li><kbd>Espacio</kbd> <span>Mantén para tirar · Hold to shoot</span></li>
+          <li><kbd>E</kbd> <span>Entrar en una sección · Enter a section</span></li>
+        </ul>
+        <div class="gate-buttons">
+          <button type="button" data-lang="es">Español</button>
+          <button type="button" data-lang="en">English</button>
+        </div>
+        <a class="gate-classic" href="/classic/">Versión clásica · Classic version</a>
+      </div>
+    </div>
+
+    <div id="loader">
+      <h2 class="loader-title">MY PORTFOLIO</h2>
+      <div class="loader-bar"><i id="loader-fill"></i></div>
+      <p id="loader-text">…</p>
+      <p class="loader-hint">Cargando la pista · Loading the court</p>
+    </div>
+
+    <canvas id="game" tabindex="0"></canvas>
+    <div id="ui"></div>
+
+    <noscript>
+      <p style="position:fixed;inset:auto 0 1rem 0;text-align:center;color:#fff">
+        <a style="color:#ff6a1a" href="/classic/">Versión clásica / Classic version</a>
+      </p>
+    </noscript>
+  </body>
+</html>
