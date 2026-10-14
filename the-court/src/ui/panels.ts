@@ -1,5 +1,5 @@
 import { content, type Project, type SectionId, type TimelineItem } from '../data/content';
-import { getLang, loc, t, type UIKey } from '../i18n';
+import { getLang, loc, t, tf, type UIKey } from '../i18n';
 import { bindContactForm, renderContactForm } from './contactForm';
 
 export const esc = (s: string): string =>
@@ -26,6 +26,8 @@ export interface GameStats {
   attempted: number;
   visited: number;
   total: number;
+  /** Mejor concurso de triples, en puntos (0 = todavía no se ha jugado). */
+  contestBest: number;
 }
 export const statsSource: { get: () => GameStats | null } = { get: () => null };
 
@@ -282,6 +284,7 @@ function renderStats(): string {
       <div><dt>${esc(t('stats_attempts'))}</dt><dd>${s.attempted}</dd></div>
       <div><dt>${esc(t('stats_accuracy'))}</dt><dd>${pct}</dd></div>
       <div><dt>${esc(t('stats_sections'))}</dt><dd>${s.visited} / ${s.total}</dd></div>
+      <div><dt>${esc(t('stats_contest'))}</dt><dd>${s.contestBest > 0 ? s.contestBest : esc(t('stats_left'))}</dd></div>
     </dl>`;
   // Sin tiros no hay récord: en vez de una tabla de ceros, se explica qué hacer.
   if (s.attempted === 0 && s.made === 0) {
@@ -290,13 +293,196 @@ function renderStats(): string {
   return `${cards}<p class="muted">${esc(t('stats_hint'))}</p>`;
 }
 
-/** Contacto: el CV siempre a la vista, y el mensaje separado del resto. */
+/* ---------------------------------------------------------------------------
+ * Entrevista: diálogo con el entrevistador y formulario al final (lote B)
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Un turno del guion: lo que dice el entrevistador y, si toca, las dos
+ * respuestas entre las que elige el jugador.
+ *
+ * El guion es una LISTA DE DATOS y no una cascada de `if`: así el orden de la
+ * conversación se lee de un vistazo, cada línea es una clave de traducción (y
+ * por tanto falta una traducción = falla el build) y añadir una pregunta es
+ * añadir un objeto sin tocar la máquina de estados.
+ *
+ * Los turnos son dos variantes y no dos campos opcionales del mismo objeto: con
+ * `host?` y `dato?` los dos a la vez —o ninguno— compilaría, y un turno sin texto
+ * saldría como una línea vacía en mitad de la entrevista.
+ */
+type DlgTurno =
+  | { host: UIKey; opciones?: [UIKey, UIKey] }
+  | { dato: DlgDato; opciones?: [UIKey, UIKey] };
+
+/** Los dos comentarios que salen de lo que el jugador ha hecho en la pista. */
+type DlgDato = 'tiros' | 'concurso';
+
+/**
+ * La frase del entrevistador sobre la partida del jugador.
+ *
+ * Los números salen del MISMO origen que el panel del récord (`statsSource`, que
+ * es lo que `main.ts` tiene cargado del navegador): no hay una segunda cuenta que
+ * se pueda quedar desfasada de la que ve el jugador en la sexta sección. Sin
+ * datos —o con la partida sin empezar— la frase es la de la ausencia, que es lo
+ * que hace que el diálogo cambie según lo que haya hecho: a un recién llegado no
+ * se le felicita por un cero.
+ */
+function lineaDato(qué: DlgDato): string {
+  const s = statsSource.get();
+  if (qué === 'tiros') {
+    if (!s || s.attempted === 0) return t('dlg_data_shots_none');
+    return tf('dlg_data_shots', {
+      made: s.made,
+      attempted: s.attempted,
+      pct: Math.round((s.made / s.attempted) * 100),
+    });
+  }
+  if (!s || s.contestBest === 0) return t('dlg_data_contest_none');
+  return tf('dlg_data_contest', { best: s.contestBest });
+}
+
+const GUION: DlgTurno[] = [
+  { host: 'dlg_open' },
+  /*
+   * Lo primero que comenta un entrevistador que acaba de ver el partido son los
+   * números: van aquí, antes de las preguntas, y son los que hacen que la misma
+   * entrevista se lea distinta en la segunda visita.
+   */
+  { dato: 'tiros' },
+  { dato: 'concurso' },
+  { host: 'dlg_q1', opciones: ['dlg_a1a', 'dlg_a1b'] },
+  { host: 'dlg_r1' },
+  { host: 'dlg_q2', opciones: ['dlg_a2a', 'dlg_a2b'] },
+  { host: 'dlg_r2' },
+  { host: 'dlg_q3', opciones: ['dlg_a3a', 'dlg_a3b'] },
+  { host: 'dlg_r3' },
+];
+
+/**
+ * Contacto: la conversación del entrevistador por delante del formulario.
+ *
+ * El formulario NO desaparece: sigue siendo el mismo (`renderContactForm`) y se
+ * envía igual, con su validación y su límite de un mensaje por minuto. Lo que
+ * cambia es dónde aparece: al final del diálogo, que es lo que pidió el
+ * propietario («en vez de ser un formulario, que aparezca un diálogo entre el
+ * entrevistador y el personaje»). El botón de saltar existe para quien sólo
+ * quiere dejar sus datos, y se esconde en cuanto el formulario está a la vista.
+ */
+export function renderInterview(): string {
+  return `<div class="dlg" data-dlg>
+    <div class="dlg__log" data-dlg-log role="log" aria-live="polite" aria-label="${esc(t('dlg_label'))}" tabindex="-1"></div>
+    <div class="dlg__choices" data-dlg-choices></div>
+    <div data-dlg-after hidden>
+      <h3 class="tabpanel__title dlg__form-title">${esc(t('dlg_form_title'))}</h3>
+      ${renderContactForm()}
+    </div>
+    <button type="button" class="btn dlg__skip" data-dlg-skip>${esc(t('dlg_skip'))}</button>
+  </div>`;
+}
+
+/**
+ * Conecta el diálogo: escribe las líneas, ofrece las respuestas y al final
+ * enseña el formulario.
+ *
+ * Va a base de nodos creados y `textContent` (nada de `innerHTML` con texto del
+ * guion): así no hay forma de que una traducción con un `<` rompa la tarjeta, y
+ * el `role="log"` con `aria-live="polite"` va anunciando cada intervención sin
+ * que haya que hacer nada más para que un lector de pantalla siga la entrevista.
+ */
+export function bindInterview(root: HTMLElement): void {
+  const box = root.querySelector<HTMLElement>('[data-dlg]');
+  if (!box) return;
+  const log = box.querySelector<HTMLElement>('[data-dlg-log]')!;
+  const choices = box.querySelector<HTMLElement>('[data-dlg-choices]')!;
+  const after = box.querySelector<HTMLElement>('[data-dlg-after]')!;
+  const skip = box.querySelector<HTMLButtonElement>('[data-dlg-skip]')!;
+  let turno = 0;
+  let timer = 0;
+
+  const linea = (quien: string, texto: string, jugador: boolean): void => {
+    const el = document.createElement('div');
+    el.className = `dlg__line${jugador ? ' dlg__line--player' : ''}`;
+    const who = document.createElement('span');
+    who.className = 'dlg__who';
+    who.textContent = quien;
+    const p = document.createElement('p');
+    p.className = 'dlg__text';
+    p.textContent = texto;
+    el.append(who, p);
+    log.appendChild(el);
+    el.scrollIntoView({ block: 'nearest' });
+  };
+
+  /** Cierra la conversación y enseña el formulario. */
+  const revelar = (): void => {
+    window.clearTimeout(timer);
+    choices.replaceChildren();
+    if (!after.hidden) return;
+    after.hidden = false;
+    /*
+     * Y el cuadro CRECE: durante la conversación la tarjeta se queda en el tercio
+     * inferior (una esquina de plató, para no tapar al entrevistador ni al
+     * personaje, que es lo que se está mirando) y al aparecer el formulario
+     * necesita el alto de siempre para que quepan los campos. La clase va aquí,
+     * pegada al `hidden` que acaba de cambiar: es el mismo cambio de estado y no
+     * hay una segunda bandera que se pueda quedar desfasada.
+     */
+    box.closest('.panel__card')?.classList.add('panel__card--form');
+    skip.hidden = true;
+    after.querySelector<HTMLInputElement>('input[name="name"]')?.focus();
+  };
+
+  const siguiente = (): void => {
+    const t2 = GUION[turno++];
+    if (!t2) {
+      revelar();
+      return;
+    }
+    linea(t('dlg_host'), 'dato' in t2 ? lineaDato(t2.dato) : t(t2.host), false);
+    if (!t2.opciones) {
+      // Pausa corta entre dos intervenciones del entrevistador: sin ella, la
+      // réplica y la pregunta siguiente caían en el mismo fotograma y se leían
+      // como una sola frase larga.
+      timer = window.setTimeout(() => {
+        if (box.isConnected) siguiente();
+      }, 520);
+      return;
+    }
+    for (const key of t2.opciones) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn';
+      b.textContent = t(key);
+      b.addEventListener('click', () => {
+        choices.replaceChildren();
+        linea(content.person.name, t(key), true);
+        /*
+         * El foco vuelve al registro y NO se queda en el botón borrado: al
+         * desaparecer el botón, el navegador deja el foco en el `body` y la
+         * trampa de foco del panel deja de reconocer el ciclo (el «último»
+         * elemento ya no es el que tenía el foco), así que el tabulador se
+         * escapaba del diálogo.
+         */
+        log.focus();
+        timer = window.setTimeout(() => {
+          if (box.isConnected) siguiente();
+        }, 380);
+      });
+      choices.appendChild(b);
+    }
+  };
+
+  skip.addEventListener('click', revelar);
+  siguiente();
+}
+
+/** Contacto: el CV siempre a la vista, y la entrevista separada del resto. */
 function renderContact(): string {
   return `<div class="cv-download">
     <a class="chip chip--link" href="documents/CV_eng.pdf" download="CV_Daniel_Noya.pdf">${esc(t('cv_download'))}</a>
     <span class="cv-download__note">${esc(t('cv_note'))}</span>
   </div>${tabs([
-    { label: t('tab_message'), html: `<p class="prose">${esc(t('interview_sub'))}</p>${renderContactForm()}` },
+    { label: t('tab_message'), html: renderInterview() },
     {
       label: t('tab_direct'),
       html: `<h3 class="tabpanel__title">${esc(t('contact_direct'))}</h3>
@@ -347,7 +533,10 @@ export class PanelManager {
       <button type="button" class="panel__close" data-close aria-label="${esc(t('close'))}">✕</button></header>
       <div class="panel__body">${RENDER[id]()}</div></div>`;
     this.el.hidden = false;
-    if (id === 'contact') bindContactForm(this.el);
+    if (id === 'contact') {
+      bindContactForm(this.el);
+      bindInterview(this.el);
+    }
     bindTabs(this.el);
     this.el.querySelector<HTMLElement>('[data-close]')?.focus();
   }

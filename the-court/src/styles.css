@@ -72,11 +72,32 @@ button { font: inherit; cursor: pointer; }
 #lang-gate {
   position: fixed; inset: 0; z-index: 50;
   display: grid; place-items: center;
-  /* Bandas verticales: degradado " escalonado" hecho con capas, no con blur. */
+  /*
+   * Bandas verticales "escalonadas" hechas con capas, no con blur. Ahora son
+   * SEMIOPACAS a propósito: la puerta se pinta sobre la pista en órbita, y con
+   * el degradado opaco de antes tapaba justo lo que se venía a enseñar. El velo
+   * sólo tiene que bajar el contraste para que el texto se lea encima.
+   */
   background:
-    repeating-linear-gradient(90deg, #101a38 0 48px, #0b1020 48px 96px);
+    repeating-linear-gradient(90deg, rgba(16, 26, 56, .62) 0 48px, rgba(11, 16, 32, .62) 48px 96px);
 }
-.gate-card { text-align: center; padding: 2rem; max-width: 92vw; }
+
+/* Durante la carga la puerta NO se ve: se ve la barra. Sin esto habría un
+   parpadeo en el primer paint, porque el marcado llega con la puerta puesta y
+   el JS tarda un instante en quitaarla. */
+body[data-mode='loading'] #lang-gate { display: none; }
+
+/* La cinemática es una postal: el HUD, los rótulos y los paneles sobran y
+   estorban. `display: none` y no `visibility`, que seguiría pintándolos. */
+body[data-mode='attract'] #ui { display: none; }
+
+.gate-card {
+  text-align: center; padding: 2rem; max-width: 92vw;
+  /* La tarjeta sí es sólida: el texto tiene que leerse contra la pista. */
+  background: rgba(11, 16, 32, .82);
+  border: var(--bw) solid var(--line-hi);
+  box-shadow: 6px 6px 0 var(--shadow);
+}
 .gate-card h1 {
   font-family: var(--display);
   font-size: clamp(2.6rem, 11vw, 6rem);
@@ -103,11 +124,34 @@ button { font: inherit; cursor: pointer; }
 
 .gate-classic { display: inline-block; margin-top: 2rem; color: var(--muted); font-size: .8rem; }
 
+/* Controles de la puerta. Bilingües y estáticos: se pintan antes de que exista
+   idioma elegido, así que NO pueden salir de `t()`. */
+.gate-keys {
+  list-style: none; margin: 0 0 1.6rem; padding: 0;
+  display: grid; gap: .45rem; justify-items: center;
+  font-size: .82rem; color: var(--muted);
+}
+.gate-keys li { display: flex; align-items: center; gap: .6rem; }
+.gate-keys kbd {
+  font-family: var(--font); font-size: .74rem; letter-spacing: .04em;
+  color: #fff; background: var(--line);
+  border: var(--bw) solid var(--line-hi); box-shadow: 2px 2px 0 var(--shadow);
+  padding: .18rem .45rem; min-width: 2.6rem; text-align: center;
+}
+
 /* Cargando */
 #loader { position: fixed; inset: 0; z-index: 40; display: grid; place-content: center; justify-items: center; gap: 1rem; background: var(--bg); }
+/* La barra se ve siempre en `loading`; el atributo `hidden` ya no la apaga. */
+body:not([data-mode='loading']) #loader { display: none; }
+.loader-title {
+  font-family: var(--display); margin: 0;
+  font-size: clamp(1.6rem, 6vw, 3rem); letter-spacing: .1em;
+  color: var(--accent); text-shadow: 3px 3px 0 var(--accent-dark), 6px 6px 0 var(--shadow);
+}
 .loader-bar { width: min(320px, 70vw); height: 18px; background: var(--line); border: var(--bw) solid var(--line-hi); overflow: hidden; }
 .loader-bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
-#loader-text { font-size: .9rem; color: var(--muted); }
+#loader-text { font-size: .9rem; color: var(--muted); margin: 0; }
+.loader-hint { font-size: .72rem; color: var(--muted); opacity: .7; margin: 0; }
 
 /* HUD */
 .hud {
@@ -281,6 +325,41 @@ button { font: inherit; cursor: pointer; }
   box-shadow: 6px 6px 0 var(--shadow);
   padding: .8rem 1.2rem; font-size: .85rem;
   text-align: center; max-width: min(92vw, 640px); pointer-events: none;
+}
+
+/* ── Subtítulos del comentarista (concurso de triples) ──────────────────────
+ * La banda de pie de pantalla de una retransmisión: abajo y centrada, con el
+ * nombre de quien habla encima de la línea. Va POR DEBAJO del medidor de tiro
+ * (que está al 14 % y es con lo que se apunta) para no taparlo justo cuando se
+ * suelta el tiro, que es cuando se está mirando.
+ *
+ * El ancho está topado al 58 % de la pantalla y no al 92 % del aviso: en una
+ * pantalla ancha, una banda centrada de lado a lado se metería debajo del récord
+ * (abajo a la derecha) y debajo de las etiquetas de rumbo. Un subtítulo de tele
+ * tampoco ocupa la pantalla entera: su sitio es el centro del pie.
+ */
+.subs {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+  max-width: min(58%, 620px);
+  padding: .3rem .8rem;
+  background: rgba(8, 12, 24, .82);
+  border-left: 8px solid var(--accent);
+  box-shadow: 5px 5px 0 var(--shadow);
+  text-align: center;
+  pointer-events: none;
+}
+.subs__who {
+  display: block;
+  font-family: var(--display);
+  font-size: .6rem; letter-spacing: .12em;
+  color: var(--muted); text-transform: uppercase;
+}
+.subs__line { font-size: .84rem; color: #fff; }
+/* Táctil: el pie de la pantalla es del joystick y de los botones (la banda de
+ * mandos mide 190 px), así que el subtítulo sube por encima de ellos. En un
+ * teléfono no hay hueco abajo que no sea un mando. */
+@media (pointer: coarse) {
+  .subs { bottom: 198px; max-width: min(88vw, 520px); }
 }
 
 /* Táctil */
@@ -506,12 +585,31 @@ input:focus, textarea:focus { border-color: var(--accent); outline: none; }
    escena. Comparte el cristal y las reservas del resto de paneles; lo único que
    cambia es dónde se ancla. El `background: transparent` del contenedor se
    mantiene (aquí la escena es el propio objeto de la conversación) y el
-   `pointer-events: none` sigue dejando jugar alrededor de la tarjeta. */
-body[data-mode='interview'] .panel { background: transparent; place-items: end start; pointer-events: none; }
+   `pointer-events: none` sigue dejando jugar alrededor de la tarjeta.
+
+   Va CENTRADA en el tercio inferior (`end center`: abajo y en el eje) y no
+   pegada a la esquina como al principio: es la posición de la tarjeta la que
+   decide que el formulario y los contactos directos —que son el mismo cuadro al
+   final del diálogo— aparezcan donde ya estaban, sin que la tarjeta dé un salto
+   lateral al cerrarse la conversación. */
+body[data-mode='interview'] .panel { background: transparent; place-items: end center; pointer-events: none; }
 body[data-mode='interview'] .panel__card {
   pointer-events: auto; width: min(460px, 100%);
-  max-height: min(100%, 58dvh);
+  /*
+   * El alto de la CONVERSACIÓN: la tarjeta se queda en el tercio inferior y deja
+   * ver el plató —el entrevistador y el personaje son el objeto de la escena, y
+   * con la tarjeta a media pantalla quedaban tapados—. La conversación se
+   * desplaza dentro del cuadro, que es lo que hace una esquina de televisión.
+   */
+  max-height: min(100%, 40dvh);
 }
+/*
+ * Al terminar el diálogo el cuadro toma el alto de siempre (58dvh): el que
+ * necesita el formulario para que quepan nombre, email y mensaje sin pelearse
+ * con el borde. La clase la pone `bindInterview` en el mismo sitio en que el
+ * formulario deja de estar oculto.
+ */
+body[data-mode='interview'] .panel__card--form { max-height: min(100%, 58dvh); }
 
 @media (max-width: 900px) {
   /* Móvil/tableta en vertical: la tarjeta va centrada y con el límite puesto en
@@ -526,7 +624,8 @@ body[data-mode='interview'] .panel__card {
 }
 
 @media (max-width: 700px) {
-  body[data-mode='interview'] .panel { place-items: end center; }
+  /* La entrevista ya va centrada en todos los tamaños (ver arriba); aquí sólo
+     queda el resto de ajustes de móvil. */
   .stat { grid-template-columns: minmax(5rem, 8rem) minmax(0, 1fr) 2.6rem; }
   .label { font-size: .7rem; }
 }
@@ -601,6 +700,172 @@ body[data-mode='interview'] .panel__card {
 .hud__record-num { font-size: 1rem; color: var(--accent); }
 @media (max-width: 520px) {
   .hud__record { right: 8px; bottom: 8px; font-size: .7rem; padding: .25rem .45rem; }
+}
+
+/* ── Marcador del concurso de triples ──────────────────────────────────────
+ * Arriba a la izquierda, bajo el chip de progreso: es el único hueco libre del
+ * HUD (centro-arriba es del Takeover, abajo están el medidor, el aviso y el
+ * récord) y deja el centro de la pantalla despejado, que es por donde se corre
+ * de un carro al siguiente.
+ */
+.contest {
+  position: absolute; left: 12px; top: 56px;
+  min-width: 190px;
+  padding: .5rem .7rem;
+  background: var(--panel);
+  border: var(--bw) solid var(--line-hi);
+  border-left: 8px solid var(--accent);
+  box-shadow: 5px 5px 0 var(--shadow);
+  font-family: var(--display);
+  font-size: .78rem; letter-spacing: .08em;
+  pointer-events: none;
+}
+.contest p { margin: 0 0 .2rem; }
+.contest__tag { color: var(--muted); font-size: .68rem; }
+.contest__row { display: flex; justify-content: space-between; gap: .8rem; }
+/* El reloj es la cifra que se mira mientras se tira: va grande y en acento. */
+.contest__time { font-size: 1.5rem; color: var(--accent); }
+.contest__pts { font-size: 1.5rem; color: #fff; }
+.contest__balls { color: var(--accent); letter-spacing: .1em; }
+.contest__hint { color: var(--warn); font-size: .7rem; }
+@media (max-width: 520px) {
+  .contest { left: 8px; top: 48px; min-width: 150px; font-size: .68rem; padding: .4rem .5rem; }
+  .contest__time, .contest__pts { font-size: 1.15rem; }
+}
+
+/* ── Retransmisión del plató (entrevista) ──────────────────────────────────
+ * El «filtro de imagen» de la tele: rejilla de líneas, viñeta, barra con el REC
+ * parpadeante, el canal y el contador. Todo en DOM y sin `filter` sobre el
+ * lienzo: un filtro a pantalla completa haría que el compositor reprocesase la
+ * escena entera en cada fotograma, y esto tiene que seguir yendo fino en una GPU
+ * integrada antigua. Las líneas y la viñeta son una capa estática más.
+ */
+.hud > .tvfx {
+  display: none;
+  position: absolute; inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(6, 10, 20, .20) 0 2px, rgba(255, 255, 255, .028) 2px 3px);
+  box-shadow: inset 0 0 150px rgba(0, 0, 0, .38);
+}
+body[data-mode='interview'] .hud > .tvfx { display: block; }
+
+.broadcast {
+  position: absolute; top: 0; left: 0; right: 0;
+  display: flex; align-items: center; justify-content: space-between; gap: .6rem;
+  padding: .35rem .7rem;
+  background: rgba(8, 12, 24, .85);
+  border-bottom: 3px solid var(--accent);
+  font-family: var(--display);
+  font-size: .8rem; letter-spacing: .1em;
+  pointer-events: none;
+}
+.broadcast__rec { display: inline-flex; align-items: center; gap: .4rem; color: #ff5c5c; }
+/* El punto del REC parpadea con `steps`: es el patrón de la casa y, además, lo
+ * que hace que se lea como un piloto de cámara y no como un adorno. */
+.broadcast__rec i {
+  width: 11px; height: 11px;
+  background: #ff2d2d;
+  animation: rec-blink .8s steps(2, end) infinite;
+}
+@keyframes rec-blink { 50% { opacity: 0; } }
+.broadcast__channel { color: #cfe0ff; opacity: .9; }
+.broadcast__time { color: var(--accent); }
+.broadcast__now { color: #fff; background: #b3261e; padding: 0 .35rem; letter-spacing: .12em; }
+@media (max-width: 520px) {
+  .broadcast { font-size: .68rem; padding: .25rem .5rem; gap: .35rem; }
+  .broadcast__rec i { width: 9px; height: 9px; }
+}
+/* La barra de arriba del HUD y el medidor de racha bajan para no pisar el REC. */
+body[data-mode='interview'] .hud__top { top: 40px; }
+body[data-mode='interview'] .takeover { top: 44px; }
+
+/* ── Diálogo del entrevistador ────────────────────────────────────────────
+ * Tres preguntas, dos respuestas cada una y la réplica del entrevistador. Cada
+ * intervención es un bloque con el nombre de quien habla, y el jugador ve su
+ * propia voz como una línea más: así el formulario final se lee como el cierre
+ * de la conversación y no como un trámite.
+ */
+.dlg__log { display: grid; gap: .7rem; margin: .4rem 0 1rem; }
+.dlg__line {
+  padding: .6rem .8rem;
+  border-left: 6px solid var(--line-hi);
+  background: rgba(255, 255, 255, .04);
+}
+.dlg__line--player { border-left-color: var(--accent); background: rgba(255, 106, 26, .10); }
+.dlg__who {
+  display: block; margin-bottom: .25rem;
+  font-family: var(--display); font-size: .72rem; letter-spacing: .1em;
+  color: var(--muted); text-transform: uppercase;
+}
+.dlg__line--player .dlg__who { color: var(--accent); }
+.dlg__text { font-family: var(--font-body); font-size: 1rem; line-height: 1.5; margin: 0; }
+/*
+ * Las respuestas son FRASES, no botones de menú: van en tipografía de cuerpo, en
+ * minúsculas y con su interlineado. En la pixel y en mayúsculas, una respuesta de
+ * dos líneas se recorta y se lee a saltos (la auditoría ya dejó escrito que la
+ * pixel no tiene minúsculas); el botón sigue siendo el mismo `.btn`, pero el
+ * texto se lee como se lee una frase.
+ */
+.dlg__choices { display: flex; flex-wrap: wrap; gap: .5rem; align-items: stretch; }
+.dlg__choices button {
+  flex: 1 1 min(260px, 100%);
+  text-align: left;
+  font-family: var(--font-body);
+  font-size: 1rem; line-height: 1.45; letter-spacing: normal; text-transform: none;
+  white-space: normal;
+}
+.dlg__typing { font-family: var(--font-body); color: var(--muted); font-style: italic; }
+.dlg__skip { display: block; margin-top: 1rem; }
+.dlg__form-title { margin-top: 1.4rem; }
+
+/* ── Medidor TAKEOVER: racha de aciertos consecutivos ──────────────────────
+ * Arriba en el centro, que es el único hueco que queda: el chip de progreso y
+ * los botones ocupan la barra de arriba (a izquierda y derecha), el medidor de
+ * tiro vive abajo al centro y el récord en la esquina inferior derecha. Con el
+ * aviso (`.toast`) tampoco se pisa: el toast sale al 14 % de arriba y esto se
+ * queda pegado al borde. En móvil vertical, la franja de abajo es del joystick,
+ * así que éste es además el sitio que no se toca nunca.
+ *
+ * Apagado no se enseña: `hidden` lo pone `hud.ts` mientras la racha sea 0. */
+.takeover {
+  position: absolute; left: 50%; top: 16px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: .7rem;
+  padding: .5rem 1rem;
+  background: var(--panel);
+  border: 4px solid var(--line-hi);
+  box-shadow: 6px 6px 0 var(--shadow);
+  font-family: var(--display);
+  /* MEDIDO para que se lea de un vistazo mientras se juega: era .78rem, el
+     tamaño de un texto secundario, y el aviso de la racha es una señal de
+     estado —cuando está encendido, el balón va en llamas— no una nota al pie.
+     1.15rem es el mismo orden que el rótulo del récord (.8rem) y el medidor de
+     tiro, y sigue cabiendo entre el chip de progreso y los botones a 320 px,
+     que es donde el HUD se aprieta de verdad. */
+  font-size: 1.15rem; letter-spacing: .1em;
+  pointer-events: none;
+}
+.takeover__tag { opacity: .75; }
+/* Muescas de la racha: mismo lenguaje que el medidor de tiro (bloques, no
+ * círculos) y `steps` en la animación, que es la regla de la casa. */
+.takeover__pips { display: inline-flex; gap: 5px; }
+.takeover__pips i {
+  width: 12px; height: 19px;
+  background: #16203c;
+  box-shadow: inset 0 0 0 1px var(--line-hi);
+}
+.takeover__pips i.is-lit { background: var(--accent); box-shadow: none; }
+/* Encendido: el aviso late para que se lea sin mirarlo. Es una señal de estado
+ * (el balón está en llamas), no un adorno: sin el latido se confundiría con la
+ * racha a medio llenar, que es exactamente lo que hay que distinguir. */
+.takeover--on { border-color: #fff; }
+.takeover--on .takeover__tag { opacity: 1; color: var(--accent); }
+.takeover--on { animation: takeover-pulse .5s steps(2, end) infinite; }
+@keyframes takeover-pulse { 50% { box-shadow: 6px 6px 0 var(--shadow), 0 0 0 4px var(--accent); } }
+/* En pantalla estrecha se reduce, pero NO vuelve al tamaño de antes: el suelo
+   son 0.92rem y muescas de 9x14, que siguen leyéndose a un brazo de distancia. */
+@media (max-width: 520px) {
+  .takeover { top: 8px; font-size: .92rem; padding: .35rem .6rem; gap: .45rem; }
+  .takeover__pips i { width: 9px; height: 14px; }
 }
 
 /* ── Paneles de sección: pestañas, texto corrido y fichas ────────────────

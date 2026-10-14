@@ -1,5 +1,5 @@
 import type { SectionId } from '../data/content';
-import { SECTION_IDS, SWEET_SPOT } from '../game/config';
+import { SECTION_IDS, SWEET_SPOT, TAKEOVER_HITS } from '../game/config';
 import type { Input } from '../game/input';
 import { getLang, setLang, t, type UIKey } from '../i18n';
 import { esc, sectionKey } from './panels';
@@ -74,13 +74,24 @@ export class Hud {
   private sweet!: HTMLElement;
   private chargeEl!: HTMLElement;
   private recordEl!: HTMLElement;
+  private takeoverEl!: HTMLElement;
+  private pipsEl!: HTMLElement;
   private toastEl!: HTMLElement;
+  private subsEl!: HTMLElement;
+  private subsLineEl!: HTMLElement;
   private live!: HTMLElement;
+  private broadcastEl!: HTMLElement;
+  private timeEl!: HTMLElement;
+  private lastSecond = -1;
+  private contestEl!: HTMLElement;
+  /** Último texto pintado del concurso: sólo se escribe el DOM cuando cambia. */
+  private contestTxt = '';
   private progress!: HTMLElement;
   private menu!: HTMLElement;
   private menuBtn!: HTMLButtonElement;
   private muteBtn!: HTMLButtonElement;
   private toastTimer = 0;
+  private subsTimer = 0;
   private progressValue = 0;
   private muted: boolean;
   /* Estado de cada sección para el menú: visitada o bloqueada (las zonas de
@@ -106,9 +117,29 @@ export class Hud {
         <div class="hud__record" data-record hidden>
           <span class="hud__record-tag"></span><span class="hud__record-num" data-record-num></span>
         </div>
+        <div class="takeover" data-takeover hidden>
+          <span class="takeover__tag"></span>
+          <span class="takeover__pips" data-pips></span>
+        </div>
         <div class="prompt" data-prompt hidden></div>
         <div class="meter" data-meter hidden aria-hidden="true"><i class="charge" data-charge></i><i class="sweet" data-sweet style="left:${((0.5 - SWEET_SPOT / 2) * 100).toFixed(1)}%;width:${(SWEET_SPOT * 100).toFixed(1)}%"></i><span class="ticks"></span><b class="needle" data-needle></b></div>
         <div class="toast" data-toast hidden></div>
+        <div class="subs" data-subs hidden aria-hidden="true">
+          <span class="subs__who"></span><span class="subs__line" data-subs-line></span>
+        </div>
+        <div class="contest" data-contest hidden aria-hidden="true">
+          <p class="contest__tag"></p>
+          <p class="contest__row"><span class="contest__time" data-contest-time>1:00</span><span class="contest__pts" data-contest-pts></span></p>
+          <p class="contest__row"><span data-contest-rack></span><span data-contest-balls></span></p>
+          <p class="contest__hint" data-contest-hint></p>
+        </div>
+        <div class="broadcast" data-broadcast hidden aria-hidden="true">
+          <span class="broadcast__rec"><i></i>${t('live_rec')}</span>
+          <span class="broadcast__channel">${t('live_channel')}</span>
+          <span class="broadcast__time" data-broadcast-time>00:00:00</span>
+          <span class="broadcast__now">${t('live_now')}</span>
+        </div>
+        <div class="tvfx" aria-hidden="true"></div>
         <div class="sr-only" data-live aria-live="polite"></div>
       </div>`;
     const q = <T extends HTMLElement>(s: string): T => this.root.querySelector<T>(s)!;
@@ -119,7 +150,20 @@ export class Hud {
     this.chargeEl = q('[data-charge]');
     this.recordEl = q('[data-record]');
     q('[data-record] .hud__record-tag').textContent = t('record_chip');
+    this.takeoverEl = q('[data-takeover]');
+    this.pipsEl = q('[data-pips]');
+    q('[data-takeover] .takeover__tag').textContent = t('takeover_tag');
+    // Las muescas se crean UNA vez y luego sólo cambian de clase: son el mismo
+    // número que cuenta el juego (`TAKEOVER_HITS`), no una copia a mano.
+    for (let i = 0; i < TAKEOVER_HITS; i++) this.pipsEl.appendChild(document.createElement('i'));
     this.toastEl = q('[data-toast]');
+    this.subsEl = q('[data-subs]');
+    this.subsLineEl = q('[data-subs-line]');
+    q('[data-subs] .subs__who').textContent = t('cmt_tag');
+    this.broadcastEl = q('[data-broadcast]');
+    this.timeEl = q('[data-broadcast-time]');
+    this.contestEl = q('[data-contest]');
+    q('[data-contest] .contest__tag').textContent = t('contest_tag');
     this.live = q('[data-live]');
     this.progress = q('[data-progress]');
     this.menu = q('[data-menu]');
@@ -173,6 +217,14 @@ export class Hud {
     this.progress.textContent = `${t('progress')} ${this.progressValue}/${SECTION_IDS.length}`;
     for (const { text, key } of this.labels.values()) text.textContent = t(key);
     this.recordEl.querySelector('.hud__record-tag')!.textContent = t('record_chip');
+    this.takeoverEl.querySelector('.takeover__tag')!.textContent = t('takeover_tag');
+    this.broadcastEl.querySelector('.broadcast__rec')!.innerHTML = `<i></i>${esc(t('live_rec'))}`;
+    this.broadcastEl.querySelector('.broadcast__channel')!.textContent = t('live_channel');
+    this.broadcastEl.querySelector('.broadcast__now')!.textContent = t('live_now');
+    this.contestEl.querySelector('.contest__tag')!.textContent = t('contest_tag');
+    this.subsEl.querySelector('.subs__who')!.textContent = t('cmt_tag');
+    // Fuerza un repintado del marcador del concurso con los textos nuevos.
+    this.contestTxt = '';
   }
 
   private closeMenu(): void {
@@ -368,6 +420,104 @@ export class Hud {
     this.progress.textContent = `${t('progress')} ${n}/${SECTION_IDS.length}`;
   }
 
+  /**
+   * Medidor de racha TAKEOVER: aciertos consecutivos y aviso de encendido.
+   *
+   * Va arriba en el CENTRO y no es un sitio cualquiera: el medidor de tiro vive
+   * abajo al centro (`bottom: 14%`) y el récord en la esquina inferior derecha,
+   * así que el hueco libre del HUD es justo ése. El plan del lote lo pedía
+   * explícitamente —el medidor de tiro se oculta con `showMeter(null)` y no se
+   * puede compartir sitio con él— y en móvil vertical tampoco se pisa con el
+   * joystick, que ocupa la franja de abajo.
+   *
+   * `streak` es la racha CRUDA (puede pasar de `TAKEOVER_HITS`) y `on` dice si
+   * el modo está encendido. Con la racha a 0 y el modo apagado, se esconde: no
+   * hay nada que contar todavía.
+   */
+  setTakeover(streak: number, on: boolean): void {
+    const visible = on || streak > 0;
+    this.takeoverEl.hidden = !visible;
+    if (!visible) {
+      /*
+       * Al esconderse se LIMPIAN las clases. Son estado de la racha anterior y,
+       * si se quedaran puestas, el DOM diría «encendido, 5 de 5» con el fuego ya
+       * apagado: cualquier cosa que leyera el estado de ahí (una captura, una
+       * prueba automática, el día que se añada un `aria-live`) mentiría. Se vio
+       * midiendo en vivo tras el primer fallo.
+       */
+      this.takeoverEl.classList.remove('takeover--on');
+      for (let i = 0; i < TAKEOVER_HITS; i++) {
+        (this.pipsEl.children[i] as HTMLElement).classList.remove('is-lit');
+      }
+      return;
+    }
+    this.takeoverEl.classList.toggle('takeover--on', on);
+    for (let i = 0; i < TAKEOVER_HITS; i++) {
+      (this.pipsEl.children[i] as HTMLElement).classList.toggle('is-lit', on || i < streak);
+    }
+  }
+
+  /**
+   * Retransmisión del plató: REC parpadeante, canal y contador.
+   *
+   * Es el «filtro de imagen» que pidió el propietario para la entrevista, pero
+   * hecho con DOM y no con un filtro CSS sobre el lienzo: un `filter` a pantalla
+   * completa obliga al compositor a reprocesar los 828 × 1.033 px en cada
+   * fotograma, y esto tiene que seguir yendo fino en una GPU integrada de 2013.
+   * Las líneas de TV (`.tvfx`), la barra de REC y el contador se dibujan una vez
+   * por cambio de texto: coste cero por fotograma.
+   *
+   * `seconds` es el reloj de la escena. El contador NO se reescribe en cada
+   * fotograma: sólo cuando cambia el cuarto de segundo que se enseña, que es la
+   * única escritura de DOM que hace falta para que parezca un contador real.
+   */
+  setBroadcast(on: boolean, seconds = 0): void {
+    this.broadcastEl.hidden = !on;
+    if (!on) {
+      this.lastSecond = -1;
+      return;
+    }
+    const frame = Math.floor(seconds * 25);
+    if (frame === this.lastSecond) return;
+    this.lastSecond = frame;
+    const total = Math.floor(frame / 25);
+    const mm = String(Math.floor(total / 60)).padStart(2, '0');
+    const ss = String(total % 60).padStart(2, '0');
+    const ff = String(frame % 25).padStart(2, '0');
+    this.timeEl.textContent = `${mm}:${ss}:${ff}`;
+  }
+
+  /**
+   * Marcador del concurso de triples: reloj, puntos, carro y balones que quedan.
+   *
+   * Va arriba a la IZQUIERDA, debajo del chip de progreso, y no en el centro: el
+   * centro de arriba es del medidor de racha del Takeover, y abajo están el
+   * medidor de tiro, el aviso y el récord. Es el único hueco del HUD que no se
+   * pisa con nada, y además deja libre el centro de la pantalla, que es donde
+   * está el carro al que hay que correr.
+   *
+   * Se escribe el DOM SÓLO cuando el texto cambia: el reloj se redondea al
+   * segundo y los puntos y el carro cambian de tarde en tarde, así que en el 90 %
+   * de los fotogramas esta función no toca nada.
+   */
+  setContest(info: { t: number; puntos: number; carro: number; total: number; balones: number; aviso: string | null } | null): void {
+    this.contestEl.hidden = info === null;
+    if (!info) {
+      this.contestTxt = '';
+      return;
+    }
+    const seg = Math.max(0, Math.ceil(info.t));
+    const txt = `${seg}|${info.puntos}|${info.carro}|${info.balones}|${info.aviso ?? ''}`;
+    if (txt === this.contestTxt) return;
+    this.contestTxt = txt;
+    const q = (s: string): HTMLElement => this.contestEl.querySelector<HTMLElement>(s)!;
+    q('[data-contest-time]').textContent = `${Math.floor(seg / 60)}:${String(seg % 60).padStart(2, '0')}`;
+    q('[data-contest-pts]').textContent = `${t('contest_score')} ${info.puntos}`;
+    q('[data-contest-rack]').textContent = `${t('contest_rack')} ${info.carro + 1}/${info.total}`;
+    q('[data-contest-balls]').textContent = '●'.repeat(info.balones) + '○'.repeat(Math.max(0, 3 - info.balones));
+    q('[data-contest-hint]').textContent = info.aviso ?? '';
+  }
+
   setPrompt(text: string | null): void {
     this.prompt.hidden = text === null;
     if (text !== null && this.prompt.textContent !== text) this.prompt.textContent = text;
@@ -408,6 +558,38 @@ export class Hud {
     this.live.textContent = text;
     window.clearTimeout(this.toastTimer);
     this.toastTimer = window.setTimeout(() => (this.toastEl.hidden = true), ms);
+  }
+
+  /**
+   * Subtítulo del comentarista: la banda de pie de pantalla de la tele.
+   *
+   * Es OTRA COSA que el aviso (`toast`), y por eso es otro elemento y no una
+   * reutilización del mismo: el aviso es del juego y aparece arriba al 14 %
+   * (resultados, récords, mensajes del dueño), mientras que el subtítulo va
+   * abajo, debajo del medidor de tiro, como el de una retransmisión. Pueden
+   * coincidir —el final del concurso deja aviso y subtítulo a la vez— y ahí es
+   * donde se ve el reparto: uno dice el resultado y el otro lo canta.
+   *
+   * Va con `aria-hidden` en el elemento y el texto MANDA a la región `aria-live`
+   * del HUD: el subtítulo es para los ojos (duplica lo que ya se ve en el HUD) y
+   * el lector de pantalla anuncia la línea una vez, no dos.
+   *
+   * Se retira solo, como el aviso. La duración la decide quien lo llama (el
+   * comentarista tiene sus propias duraciones por tipo de frase), así que aquí
+   * no hay ningún texto que aguante «lo que haga falta».
+   */
+  subtitle(text: string, ms = 2400): void {
+    if (this.subsLineEl.textContent !== text) this.subsLineEl.textContent = text;
+    this.subsEl.hidden = false;
+    this.live.textContent = text;
+    window.clearTimeout(this.subsTimer);
+    this.subsTimer = window.setTimeout(() => (this.subsEl.hidden = true), ms);
+  }
+
+  /** Retira el subtítulo ya: al dejar el concurso a medias no se sigue hablando. */
+  hideSubtitle(): void {
+    window.clearTimeout(this.subsTimer);
+    this.subsEl.hidden = true;
   }
 
   /** Joystick virtual + botones TIRO / ACCIÓN para pantallas táctiles. */

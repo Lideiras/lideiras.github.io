@@ -1,7 +1,8 @@
-Agrega animaciones extra para el personaje jugable y los reporteros como movimiento de los brazon al botar, animacion sencilla de caida post salto de tiro, para los reporteros cierto movimiento que otorgue realismo, para el publico movimiento sencillo para dar realismo y mas animaciones sencillas que podamos implementar
-Los cuadros de texto con la informacion no los quiero pegados al lateral si no mas flotantes pero sin ocupar de manera excesiva la pantalla pero manteniendo orden, coherencia y legibilidad de los elementos al fin y al cabo es la informacion de mi portfolio asi que deberia ser legible y correcta
-El marcador superior no termina de mostrar correctamente el record del usuario, aparecen los numeros cortados por la mitad
-Mejora la iluminacion, hay focos en la parte superior de la cancha que deberian aportar luz ademas de que debemos modificar la luz para que se asemeje mas a la luz interior de un pabellon estilo nba
-Por alguna razon ocurre una mejora considerable en el rendimiento posterior a abrir alguna de las secciones y luego cerrarla respecto a la primera carga el juego sin abrir ningua seccion
-Las texturas de los cubos que conforman el personaje se solapan en algunas ocasiones, intenta investigar y que esto no ocurra
-Por ahora estas mejoras pero te pido que seas proactivo, que si consideras que se puede mejorar mas cosas tanto visuales como de rendimiento a lo largo de las implementaciones me las propongas para que las acepte o no
+Ahora quiero introducir mejoras:
+La primera es la seleccion inicial de idioma, no estaria mucho mejor visualmente que la camara ensenhase el escenario en un movimiento circular cinematico ensenhando el escenario y el personaje de fondo hasta que el usuario elige el idioma mostrando informacion del juego, controles y que se puede hacer dentro de el?
+Se podrian agregar mas animaciones al personaje principal jugable? Por ejemplo que si esta cerca de canasta haga un mate o una entrada a canasta en vez de un tiro, que el tiro si es muy lejos sea un movimiento diferente, movimiento de cambios de direccion o cambios de direccion bruscos
+Otra mejora seria, para en la seccion entrevistame, al pedir los datos del formulario, en vez de ser un formulario que aparezca un dialogo entre el entrevistador y el personaje ademas de que puede la camara ser desde la perspectiva de la camara de television que hay al lado con filtro de imagen, texto de REC parpadeando, info de canales, etc.
+La experiencia podria tener algo mas dinamico relacionado con el baloncesto en vez de un cuadro de texto plano y ya
+Que haya un medidor "Takeover" que si el usuario encesta 5 veces seguidas el balon tenga una estela de fuego hasta que falle canasta
+Tambien podemos agragar un carrito con balones en una esquina que al interactuar con el nos permita jugar un concurso de triples con 5 carros con 3 balones cada uno en las posiciones de la canasta derecha para que el jugador tire desde esos carros en un tiempo limite como en el concurso de triples de la nba
+Me gustaria mejorar tambien el disenho del pelo de los personajes para dar mas volumen ya que ahora se ve bastante basico sobretodo el los laterales

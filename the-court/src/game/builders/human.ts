@@ -212,6 +212,20 @@ const TX = 6; // semiancho del torso    -> 12 celdas (0,444 m)
  * rígidos empieza a ser imposible de sostener.
  */
 const LEAN_RUN = 0.14;
+
+/**
+ * Inclinación lateral MÁXIMA en un corte, en radianes.
+ *
+ * Gira sobre la Z local del tronco (`lean.rotation.z`), así que 0,35 rad son
+ * unos 20°: el cuerpo se inclina hacia dentro del giro como el de alguien que
+ * planta el pie para cambiar de sentido. Se midió contra el `lean` hacia
+ * delante (0,14) para que el corte se lea MÁS que la carrera — es un gesto
+ * puntual, no un estado— pero sin que el personaje parezca caerse. Al ser un
+ * rig de bloques rígidos, por encima de unos 25° el torso se separa del
+ * pantalón y se ve la costura.
+ */
+const CORTE_BANK = 0.35;
+
 const TZ = 4; // semiprofundidad        -> 8 celdas
 
 /**
@@ -422,15 +436,41 @@ export function buildHuman(o: HumanOptions): HumanRig {
     v.eraseCells(-HX, chin, -HZ, -HX + 1, chin + 1, -HZ + 1);
     v.eraseCells(HX - 2, chin, -HZ, HX - 1, chin + 1, -HZ + 1);
 
-    // ── PELO, capa 1: masa trasera. Sin ella el peinado es una fachada que no
-    // funciona de perfil (§6.3).
-    v.fillCells(-HX, chin + 4, -HZ - 2, HX - 1, crestY - 1, -HZ - 1, hairAlt);
+    /* ── PELO, capa 1: masa trasera. Sin ella el peinado es una fachada que no
+     * funciona de perfil (§6.3). */
+    //
+    // La nuca bajaba hasta chin+4 y el cráneo se veía por debajo: el pelo
+    // parecía pegado al frente y la cabeza se leía con una nuca pelada. Ahora
+    // llega hasta chin+1 y, por arriba, añade una fila MÁS ATRÁS que el
+    // cráneo: de perfil la cabeza tiene detrás en vez de terminar en seco.
+    v.fillCells(-HX, chin + 1, -HZ - 2, HX - 1, crestY - 1, -HZ - 1, hairAlt);
+    // Fila exterior de la nuca, más estrecha para que el contorno se redondee
+    // en vez de terminar en una pared recta.
+    v.fillCells(-HX + 3, chin + 10, -HZ - 3, HX - 4, crestY - 1, -HZ - 2, hairAlt);
     // ── capa 2: casquete. No avanza por delante del plano de la cara.
     v.fillCells(-HX, capY, -HZ - 1, HX - 1, crestY - 1, HZ - 1, o.hair);
-    // ── capa 3: patillas, SÓLO la mitad trasera del costado y desde media
-    // altura. Cubrir todo el lateral convierte la cabeza en un casco marrón.
-    v.fillCells(-HX - 1, chin + 12, -HZ, -HX - 1, capY + 2, -1, hairAlt);
-    v.fillCells(HX, chin + 14, -HZ, HX, capY + 2, -1, hairAlt);
+    /*
+     * capa 3: MASAS LATERALES.
+     *
+     * Antes eran un muro de UNA celda de grosor, desde media altura y sólo por
+     * la mitad trasera del costado: de frente no se veían y de perfil no daban
+     * volumen, que es justo lo que señaló el propietario. Con una sola capa,
+     * el pelo se lee como PINTADO sobre el cráneo en lugar de como una masa.
+     *
+     * Ahora cada lado tiene DOS capas y ambas escalonan:
+     *   · la primera pegada a la cabeza, completa en altura (desde el casquete
+     *     hasta media mejilla) y en fondo, pero parando antes de la cara;
+     *   · la segunda por FUERA a media altura, más corta: es la que da el
+     *     escalón en la silueta, que es lo que se lee como volumen.
+     *
+     * Mismo color de sombra (`hairAlt`) en las dos, como manda la guía §6.2:
+     * el lateral es la misma masa vista de otro lado, no un pelo de otro tono.
+     * Se paran antes de las orejas (y 23..26) para no tragárselas.
+     */
+    v.fillCells(-HX - 1, chin + 11, -HZ - 1, -HX - 1, crestY - 1, 4, hairAlt); // izq. pegada
+    v.fillCells(-HX - 2, chin + 16, -HZ, -HX - 2, crestY - 1, 2, hairAlt); //     izq. exterior
+    v.fillCells(HX, chin + 13, -HZ - 1, HX, crestY - 1, 3, hairAlt); //           der. pegada
+    v.fillCells(HX + 1, chin + 17, -HZ, HX + 1, crestY - 1, 1, hairAlt); //       der. exterior
     // ── capa 4: flequillo de tres alturas, por DELANTE de la cara. Empieza en
     // chin+9 (y 34), justo encima de las cejas: bajarlo las entierra.
     const bangY = chin + 12; // 32
@@ -646,6 +686,22 @@ export interface HumanAnimOptions {
   regate?: number;
   /** Giro de cabeza al cambiar de mano, -1..1. */
   giro?: number;
+  /**
+   * Corte (cambio de dirección brusco), magnitud 0..1.
+   *
+   * Se calcula en `main.ts` del MISMO evento que `giro` —el cambio de mano que
+   * dispara un giro de más de `HAND_SWITCH_ANGLE` en la ruta— así que los dos
+   * gestos van siempre juntos: la cabeza mira hacia donde va y el cuerpo se
+   * inclina hacia dentro del giro. Con un detector propio habría dos umbrales
+   * que ajustar y se podrían desincronizar.
+   */
+  corte?: number;
+  /**
+   * Lado del corte: +1 si la ruta gira hacia la IZQUIERDA del jugador, -1 si
+   * hacia la derecha. Es el signo del giro real de la ruta, no el de la mano:
+   * la mano es un interruptor que alterna y no dice hacia dónde se ha girado.
+   */
+  corteDir?: -1 | 1;
   /** Reacción de frustración tras fallar, 0..1. */
   frustracion?: number;
   /** Gesto de recoger el balón del suelo, 0..1. */
@@ -759,12 +815,31 @@ export function animateHuman(
   // el que empujarse.
   rig.lean.rotation.x = LEAN_RUN * s * (grounded ? 1 : 0.35);
 
+  /*
+   * CORTE (cambio de dirección brusco).
+   *
+   * El cuerpo se inclina hacia DENTRO del giro: girando a la izquierda la parte
+   * de arriba cae a la izquierda, que es lo que hace alguien al plantar el pie y
+   * cambiar de sentido. Sale de rotar `lean` sobre la Z LOCAL (la del pecho), que
+   * es el eje que el cuerpo puede inclinar sin romper la silueta: las piernas se
+   * quedan verticales y el giro se lee en el tronco y la cabeza, como el `lean`
+   * hacia delante de la carrera.
+   *
+   * El valor se ASIGNA siempre (aunque sea 0): así un corte no se queda pegado en
+   * el hueso al terminar. En el aire se atenúa a un tercio, igual que el `lean`
+   * hacia delante — sin apoyo no hay contra qué inclinarse.
+   */
+  const corte = clamp01(opts.corte ?? 0);
+  rig.lean.rotation.z = corte * CORTE_BANK * (opts.corteDir ?? 1) * (grounded ? 1 : 0.35);
+
   // Cuerpo: rebote al correr, respiración al estar quieto, hundimiento al caer.
   rig.body.position.y =
     Math.abs(Math.sin(time * 11)) * 0.06 * s +
     Math.sin(time * 1.7) * 0.006 * (1 - s) -
     land * 0.12 -
-    recoge * 0.05;
+    recoge * 0.05 -
+    // Al cortar se baja el centro de gravedad: 4 cm en el pico del giro.
+    corte * 0.04;
   /*
    * TRANSFERENCIA DE PESO en reposo (proactivo): 1,5 cm de vaivén lateral.
    * Un personaje de bloques que sólo sube y baja parece un poste; el peso
@@ -858,6 +933,63 @@ export function poseShoot(rig: HumanRig, k: number): void {
   rig.armR.rotation.z = mix(rig.armR.rotation.z, -0.1, w);
   // La cabeza acompaña al balón: mirar arriba es lo que vende el gesto.
   rig.torso.rotation.x = mix(rig.torso.rotation.x, -0.12 * w, w);
+}
+
+/**
+ * Capa de MATE / ENTRADA: se resuelve al estar cerca del aro.
+ *
+ * Es una capa de pose como las demás: MEZCLA con peso `k`, nunca asigna. La
+ * diferencia con `poseShoot` es la lectura del gesto: en un mate los dos brazos
+ * suben, las rodillas se recogen y el cuerpo se echa ATRÁS, que es lo que
+ * distingue «colgar el balón» de «tirar». El tiro de cerca sale muy vertical y
+ * con el cuerpo estirado; sin el cambio, machacar y tirar se veían igual.
+ *
+ * La física NO cambia: la trayectoria la sigue calculando `solveShot` desde el
+ * mismo punto de siempre. Esto es sólo el gesto — el balón no sale de la mano
+ * ni más alto ni más rápido.
+ */
+export function poseDunk(rig: HumanRig, k: number): void {
+  const w = clamp01(k);
+  if (w <= 0) return;
+  // Los dos brazos arriba y ligeramente hacia dentro: las manos se cierran
+  // sobre el aro, no se abren como en un tiro.
+  rig.armL.rotation.x = mix(rig.armL.rotation.x, -2.35, w);
+  rig.armR.rotation.x = mix(rig.armR.rotation.x, -2.5, w);
+  rig.armL.rotation.z = mix(rig.armL.rotation.z, 0.14, w);
+  rig.armR.rotation.z = mix(rig.armR.rotation.z, -0.14, w);
+  // Rodillas recogidas: el cuerpo va compacto, colgado del aro.
+  rig.legL.rotation.x = mix(rig.legL.rotation.x, -0.7, w);
+  rig.legR.rotation.x = mix(rig.legR.rotation.x, -0.42, w);
+  // El torso se echa atrás para que la curva del cuerpo se lea en silueta.
+  rig.lean.rotation.x = mix(rig.lean.rotation.x, -0.1, w);
+  rig.torso.rotation.x = mix(rig.torso.rotation.x, 0.16, w);
+}
+
+/**
+ * Capa de TIRO LEJANO: se resuelve más allá de `LONG_RANGE` (config.ts).
+ *
+ * A distancia el tiro no es «los dos brazos arriba»: el cuerpo entero empuja,
+ * un brazo busca el aro y el otro se queda abajo de contrapeso, y las piernas
+ * acompañan el impulso en vez de recogerse. Es el gesto que el propietario pedía
+ * distinto para los tiros largos, y se consigue sin tocar la parábola (que sale
+ * del mismo `solveShot` y del mismo `y` de 2,15 m).
+ */
+export function poseLejano(rig: HumanRig, k: number): void {
+  const w = clamp01(k);
+  if (w <= 0) return;
+  // El brazo que tira sube algo menos que en el tiro normal (el impulso lo pone
+  // el cuerpo) y el otro baja a la cadera como contrapeso. El -1,72 es distinto
+  // del tope de `poseShoot` (-1,95) a propósito: si coincidieran, el gesto
+  // largo sería el mismo tiro con las piernas cambiadas.
+  rig.armL.rotation.x = mix(rig.armL.rotation.x, -1.72, w);
+  rig.armR.rotation.x = mix(rig.armR.rotation.x, -0.5, w);
+  rig.armL.rotation.z = mix(rig.armL.rotation.z, 0.16, w);
+  rig.armR.rotation.z = mix(rig.armR.rotation.z, -0.26, w);
+  // Piernas: impulso, no recogida. Una empuja y la otra acompaña.
+  rig.legL.rotation.x = mix(rig.legL.rotation.x, 0.22, w);
+  rig.legR.rotation.x = mix(rig.legR.rotation.x, -0.18, w);
+  // Un punto de inclinación atrás: de lejos el tiro sale con toda la cadena.
+  rig.torso.rotation.x = mix(rig.torso.rotation.x, -0.07, w);
 }
 
 /**

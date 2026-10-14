@@ -273,6 +273,86 @@ export function buildNet(side: Side): THREE.Mesh {
   return mesh;
 }
 
+/*
+ * CARRITO DE BALONES DEL CONCURSO DE TRIPLES (lote B).
+ *
+ * Un solo objeto para los CINCO carros de la línea de tres, y el primero es el
+ * carrito de la esquina (el que se pulsa con E): tener un constructor solo es lo
+ * que garantiza que el carro desde el que sales y los carros a los que vas sean el
+ * mismo objeto a ojos del jugador.
+ *
+ * Los TRES BALONES van sueltos (una malla por balón, fuera del fundido de mallas
+ * estáticas): son lo único que cambia durante el concurso —se van gastando— y una
+ * malla fundida no se puede esconder por partes.
+ */
+export function buildBallCart(): { group: THREE.Group; balls: THREE.Group[] } {
+  const group = voxelGroup(
+    'ballCart',
+    (v) => {
+      const ANCHO = 0.55; // semiancho de la bandeja
+      const FONDO = 0.22; // semiprofundidad
+      // Bandeja con canto: la chapa del fondo y un reborde que para el balón.
+      v.span(-ANCHO, 0.6, -FONDO, ANCHO, 0.66, FONDO, PALETTE.wood);
+      v.span(-ANCHO, 0.66, -FONDO, ANCHO, 0.72, -FONDO + 0.06, PALETTE.woodDark);
+      v.span(-ANCHO, 0.66, FONDO - 0.06, ANCHO, 0.72, FONDO, PALETTE.woodDark);
+      // Patas: cuatro tubos con una traviesa a media altura (menos caja, más carro).
+      for (const dx of [-ANCHO + 0.06, ANCHO - 0.06]) {
+        for (const dz of [-FONDO + 0.06, FONDO - 0.06]) {
+          v.span(dx - 0.035, 0, dz - 0.035, dx + 0.035, 0.6, dz + 0.035, PALETTE.metal);
+        }
+        v.span(dx - 0.03, 0.12, -FONDO + 0.06, dx + 0.03, 0.18, FONDO - 0.06, PALETTE.metal);
+      }
+      // Asa: dos montantes y un travesaño, a la altura de la mano (1,05 m).
+      v.span(-ANCHO, 0.66, FONDO - 0.03, -ANCHO + 0.06, 1.05, FONDO + 0.03, PALETTE.metal);
+      v.span(ANCHO - 0.06, 0.66, FONDO - 0.03, ANCHO, 1.05, FONDO + 0.03, PALETTE.metal);
+      v.span(-ANCHO, 1.0, FONDO - 0.03, ANCHO, 1.06, FONDO + 0.03, PALETTE.wood);
+    },
+    VOXEL * 2,
+  );
+
+  const balls: THREE.Group[] = [];
+  for (let i = 0; i < 3; i++) {
+    const b = ballVoxels(`cartBall${i}`, -0.36 + i * 0.36, 0.66 + BALL_R, 0, BALL_R);
+    balls.push(b);
+    group.add(b);
+  }
+  return { group, balls };
+}
+
+/** Radio de los balones del carro, en metros (un pelín mayor que el de juego). */
+const BALL_R = 0.13;
+
+/**
+ * Un balón de voxels, como malla suelta.
+ *
+ * Voxeliza una esfera con el mismo criterio que el resto del atrezzo (cada celda
+ * se rellena si su centro cae dentro del radio) y le pinta una banda de costura
+ * oscura por el ecuador: sin ella, el balón es una bola naranja que a la
+ * distancia del carro no se distingue de un cubo redondeado.
+ */
+function ballVoxels(name: string, cx: number, cy: number, cz: number, r: number): THREE.Group {
+  const s = VOXEL;
+  const n = Math.ceil(r / s) + 1;
+  return voxelGroup(
+    name,
+    (v) => {
+      for (let i = -n; i <= n; i++) {
+        for (let j = -n; j <= n; j++) {
+          for (let k = -n; k <= n; k++) {
+            const px = cx + i * s;
+            const py = cy + j * s;
+            const pz = cz + k * s;
+            if ((px - cx) ** 2 + (py - cy) ** 2 + (pz - cz) ** 2 > r * r) continue;
+            const costura = Math.abs(py - cy) < s * 0.6 || Math.abs(px - cx) < s * 0.6;
+            v.span(px - s / 2, py - s / 2, pz - s / 2, px + s / 2, py + s / 2, pz + s / 2, costura ? 0x9c4f18 : PALETTE.ball);
+          }
+        }
+      }
+    },
+    s,
+  );
+}
+
 /**
  * Mesa de anotadores, al centro de la banda lejana (0, -9), delante de las gradas.
  * Es la que abre la sección de Skills. Lleva una placa con el rótulo encima.

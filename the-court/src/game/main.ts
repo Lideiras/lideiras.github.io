@@ -7,25 +7,44 @@ import { Sfx } from './audio';
 import { Ball } from './ball';
 import { ARENA_LAMPS, buildCourt, buildCourtLines, buildScoreboard } from './builders/court';
 import {
-  RECOGE_TIME, animateHuman, buildHuman, holdPeso, mezclaPeso, poseCelebrate, poseShoot, regateAltura, recogePeso,
+  RECOGE_TIME, animateHuman, buildHuman, handWorld, holdPeso, mezclaPeso, poseCelebrate, poseDunk, poseLejano,
+  poseShoot, regateAltura, recogePeso,
 } from './builders/human';
 import { batchStaticMeshes } from './builders/batch';
-import { NET, buildBench, buildHoop, buildScorerTable, buildTunnel, buildZoneRing, createBallMesh } from './builders/props';
+import { NET, buildBallCart, buildBench, buildHoop, buildScorerTable, buildTunnel, buildZoneRing, createBallMesh } from './builders/props';
 import { PLAYER_RADIUS, buildColliders, resolveCircle } from './collide';
 import { loadModel, normalize } from './assets';
 import { VOXEL_MATERIAL, canvasTexture, noCastShadow } from './builders/util';
 import { animateTvOperator, animateTvReporter, buildInterviewSet } from './builders/tv';
+import { comentar, nuevoComentarista, type Suceso } from './commentary';
 import {
-  BALL, CAMERA,
+  BALL, CAMERA, CARRITO, CONCURSO, CONCURSO_SIDE,
+  DUNK_RANGE, DUNK_RUN_MIN, LONG_RANGE, TRIPLES,
   SECTION_CAMERA, HAND_SWITCH_ANGLE, INTERVIEW, PLAYER, RIM, SECTION_IDS, SHOOT_JUMP, SHOOT_RANGE,
+  TAKEOVER_HITS,
   ZONES, rimX, type Side, type Zone,
 } from './config';
+import {
+  avanzarCarro, avanzarReloj, arrancarReloj, carroVacio, empezar, enBocina, nuevoConcurso, puedeCoger, puedeTirar,
+  quedanCarros, resolverTiro, salir, tomarBalon, terminar,
+} from './contest';
+import { dunkPose, dunkX, dunkY, dunkZ, newDunk, puedeMate, startDunk, stepDunk } from './dunk';
+import { FireTrail } from './fireTrail';
 import { Input } from './input';
 import { launchJump, newJump, stepJump } from './jump';
 import { applyShotError, difficultyAt, evaluateMeter, meterAt, solveShot, sweetCenterAt, sweetSpotAt } from './shot';
 
-type Mode = 'play' | 'panel' | 'interview';
-export interface GameHandle { start(): void; dispose(): void }
+/**
+ * `attract` es el estado en el que el juego EXISTE pero no se juega: la escena
+ * ya está construida y horneada (`createGame` la deja lista antes de devolver)
+ * y el bucle ya está girando, pero el jugador no controla nada.
+ *
+ * No hizo falta tocar nada de la lógica para conseguirlo: `update()` ya se
+ * cierra con `const playing = mode === 'play'` y `setMode` desactiva el input
+ * fuera de `play`. Añadir el caso apaga el juego, no lo apaga a medias.
+ */
+type Mode = 'play' | 'panel' | 'interview' | 'attract';
+export interface GameHandle { beginAttract(): void; start(): void; dispose(): void }
 
 const clamp = (v: number, a: number, b: number): number => Math.min(b, Math.max(a, v));
 /**
@@ -84,6 +103,30 @@ function saveStats(s: { made: number; attempted: number }): void {
     localStorage.setItem('court.stats', JSON.stringify(s));
   } catch {
     /* almacenamiento bloqueado: el récord no persiste, el juego sigue */
+  }
+}
+
+/**
+ * Mejor concurso de triples, guardado aparte del récord de tiros.
+ *
+ * Son dos marcas distintas y no se mezclan: el récord cuenta la vida entera del
+ * jugador (y crece tirada a tirada), y el concurso es una partida de 60 s. Si
+ * vivieran en la misma cifra, entrar al concurso una vez destrozaría el
+ * porcentaje de acierto del récord y viceversa.
+ */
+function loadMejorConcurso(): number {
+  try {
+    const v = Number(localStorage.getItem('court.contest') ?? 0);
+    return Number.isFinite(v) && v > 0 ? Math.floor(v) : 0;
+  } catch {
+    return 0;
+  }
+}
+function saveMejorConcurso(v: number): void {
+  try {
+    localStorage.setItem('court.contest', String(v));
+  } catch {
+    /* almacenamiento bloqueado: la marca no persiste, el juego sigue */
   }
 }
 
@@ -849,7 +892,61 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
   // escorzo, con las esquinas de los dígitos comidas justo en el ángulo desde el
   // que más se mira: el encuadre de juego, que mira el tablero de abajo.
   const scoreboard = buildScoreboard(renderer.capabilities.getMaxAnisotropy());
-  scene.add(hoopL, hoopR, benchProp, tunnelProp, scorerTable, scoreboard);
+  /*
+   * EL CARRITO DEL CONCURSO DE TRIPLES (lote B).
+   *
+   * En la pista hay UNO: el de la esquina, que es el que se pulsa con E y, además,
+   * el PRIMER carro del recorrido (`TRIPLES[0]`): llegar, pulsar E y tirar desde
+   * ahí mismo, sin un carro de adorno al lado. Los otros cuatro puestos (diagonal,
+   * central, diagonal y la otra esquina) se construyen aquí también, pero NACEN
+   * OCULTOS y aparecen al convocar el concurso: la pista se queda limpia mientras
+   * se juega al baloncesto normal. Los pone y los quita `mostrarPuestos()`, los
+   * tres elementos a la vez (carro, anillo y mancha), que es lo que impide que uno
+   * de los cuatro se quede descolgado.
+   *
+   * El mismo constructor para los cinco, y los carros del recorrido mirando hacia
+   * fuera de la pista: el jugador llega de espaldas al aro, coge el balón y se gira
+   * para tirar, así que el asa del carro es lo que queda del lado de su cuerpo. El
+   * carrito usa la MISMA orientación que los demás: es el primer puesto, no un
+   * atrezo aparte.
+   *
+   * (El carrito SÍ entra en el fundido de mallas estáticas y SÍ proyecta sombra:
+   * nunca se esconde, así que no tiene ninguno de los dos problemas de abajo.)
+   *
+   * NI FUNDIDOS NI PROYECTANDO SOMBRA, y las dos cosas son a propósito:
+   *  · el fundido de mallas estáticas REMUEVE la malla de su grupo (`batch.ts`),
+   *    así que un carro fundido ya no se podría esconder por partes ni aparecer
+   *    después — sólo quedaría su copia dentro del lote del mundo—;
+   *  · su sombra se hornearía en el mapa estático y, al esconderse el carro, se
+   *    quedaría la sombra sola en el parqué. Llevan su mancha radial (`blob`),
+   *    que es la misma técnica que usan el jugador y el balón y cuesta una
+   *    llamada de dibujo por carro sólo mientras está a la vista.
+   */
+  const carrito = buildBallCart();
+  carrito.group.position.set(CARRITO.x, 0, CARRITO.z);
+  carrito.group.rotation.y = Math.atan2(CARRITO.x - rimX(CONCURSO_SIDE), CARRITO.z);
+  const carros = TRIPLES.slice(1).map((p) => {
+    const c = buildBallCart();
+    c.group.position.set(p.x, 0, p.z);
+    c.group.rotation.y = Math.atan2(p.x - rimX(CONCURSO_SIDE), p.z);
+    c.group.visible = false;
+    // Y los balones, uno a uno: esconder el grupo ya los tapa, pero así el estado
+    // del mundo dice la verdad desde el primer fotograma (ningún balón de puesto
+    // está «a la vista» antes de que haya concurso). Los enciende
+    // `mostrarPuestos()`, que es también quien apaga el grupo.
+    for (const b of c.balls) b.visible = false;
+    noCastShadow(c.group);
+    return c;
+  });
+  /*
+   * LOS CINCO PUESTOS EN ORDEN DE RECORRIDO, con sus mallas: el carrito primero
+   * (`TRIPLES[0]`) y detrás los cuatro que aparecen. El estado del concurso habla
+   * de puestos por ÍNDICE (`concurso.carro` es un índice de `TRIPLES`), así que
+   * esta lista tiene que estar en ese mismo orden o los balones desaparecerían del
+   * carro de al lado. La usan `balonesVisibles()` y `sincronizarBalones()`.
+   */
+  const puestos = [carrito, ...carros];
+  scene.add(hoopL, hoopR, benchProp, tunnelProp, scorerTable, scoreboard, carrito.group, ...carros.map((c) => c.group));
   const set = buildInterviewSet();
   scene.add(set.group);
 
@@ -865,11 +962,32 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
   const solids = buildColliders();
 
   const rings: THREE.Mesh[] = [];
-  for (const z of ZONES) {
+  /*
+   * Un anillo por zona y uno por puesto del concurso: el carrito de la esquina
+   * (que es el primer carro) y los cuatro puestos que aparecen al convocar. Son los mismos anillos que marcan las secciones y
+   * cuestan lo mismo (una malla plana sin sombra), pero es lo que se ve de lejos
+   * que ahí hay algo con el que se puede interactuar.
+   */
+  for (const z of [...ZONES, { x: CARRITO.x, z: CARRITO.z, radius: CONCURSO.alcance }]) {
     // Antes se saltaban las zonas de tiro y la canasta de Projects se quedaba
     // sin su anillo naranja, mientras que la de Récord sí lo tenía. Las dos
     // canastas son zonas jugables y las dos lo llevan.
     const ring = buildZoneRing(z.x, z.z, z.radius);
+    rings.push(ring);
+    scene.add(ring);
+  }
+  /*
+   * Los cuatro anillos del recorrido, que van con los carros que aparecen: ocultos
+   * hasta que hay concurso. El del carrito ya está arriba con las zonas, porque su
+   * anillo es también el que marca dónde se pulsa E y está siempre. Se guardan
+   * aparte (`ringsPuestos`) porque de `rings` se espera lo contrario —que estén
+   * siempre— y el pulso de `update()` los recorre todos.
+   */
+  const ringsPuestos: THREE.Mesh[] = [];
+  for (const p of TRIPLES.slice(1)) {
+    const ring = buildZoneRing(p.x, p.z, CONCURSO.alcance);
+    ring.visible = false;
+    ringsPuestos.push(ring);
     rings.push(ring);
     scene.add(ring);
   }
@@ -936,6 +1054,28 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
   );
 
   /*
+   * ESTELA DE FUEGO DEL TAKEOVER (lote A, T3).
+   *
+   * Una sola llamada de dibujo para toda la llama (`THREE.Points` con mezcla
+   * aditiva, 28 puntos) y FUERA del mapa de sombras: nada que se mueva proyecta
+   * — el mapa se hornea una vez y una llama proyectando dejaría una copia
+   * congelada en cada canasta. El objeto nace invisible y sólo se enciende con el
+   * modo; apagado no cuesta ni una llamada.
+   */
+  const fireTrail = new FireTrail();
+  scene.add(fireTrail.object);
+  /**
+   * Posición del balón en el fotograma anterior, para medir su velocidad real.
+   *
+   * No se usa `ball.vel` a propósito: con el balón en las manos (regate) `vel`
+   * no se actualiza —lo coloca `placeHeldBall`— así que la estela se apagaría
+   * justo mientras el jugador bota, que es cuando más se ve el fuego. La
+   * diferencia de posición funciona en los dos casos (vuelo y regate).
+   */
+  const firePrev = new THREE.Vector3();
+  let fireVel = 0;
+
+  /*
    * SOMBRAS DE CONTACTO del jugador y del balón.
    *
    * El mapa de sombras es estático (ver arriba), así que nada que se mueva puede
@@ -968,7 +1108,19 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
   };
   const playerBlob = blob(1.2);
   const ballBlob = blob(0.34);
-  scene.add(playerBlob, ballBlob);
+  /*
+   * Manchas de los cuatro puestos que aparecen: misma técnica, mismas piezas y
+   * fuera de la escena mientras no hay concurso. NO van colgadas del carro
+   * porque la aparición del puesto escala el carro en Y (crece del parqué desde
+   * su base) y una mancha plana colgada de ahí se aplastaría con él.
+   */
+  const marcasPuestos = TRIPLES.slice(1).map((p) => {
+    const m = blob(1.3);
+    m.position.set(p.x, 0.022, p.z);
+    m.visible = false;
+    return m;
+  });
+  scene.add(playerBlob, ballBlob, ...marcasPuestos);
 
   /*
    * Redes del aro: la sacudida al entrar el balón.
@@ -1002,7 +1154,7 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
   const visited = loadSet('court.visited');
   const unlocked = loadSet('court.unlocked');
   const stats = loadStats();
-  statsSource.get = () => ({ ...stats, visited: visited.size, total: SECTION_IDS.length });
+  statsSource.get = () => ({ ...stats, visited: visited.size, total: SECTION_IDS.length, contestBest: mejorConcurso });
   const input = new Input();
   // ORDEN IMPORTANTE: el HUD primero. Su constructor hace `uiRoot.innerHTML = ...`,
   // es decir, borra todo lo que hubiera en #ui. Si PanelManager se construyera antes,
@@ -1087,10 +1239,126 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
    */
   let handSide: -1 | 1 = 1;
   let lastDirAngle = 0;
+  /*
+   * GESTO DEL ÚLTIMO TIRO Y LADO DEL CORTE (lote A, T4).
+   *
+   * `gestoTiro` lo fija `shoot()` por la distancia al aro y lo consume la capa
+   * de pose del seguimiento: mate de cerca, tiro largo de lejos y el tiro normal
+   * en medio. `corteDir` es hacia dónde giró la ruta en el último corte (+1 =
+   * izquierda del jugador), que es lo que hace que el cuerpo se incline hacia
+   * dentro del giro y no al revés.
+   */
+  let gestoTiro: 'tiro' | 'dunk' | 'lejano' = 'tiro';
+  let corteDir: -1 | 1 = 1;
   let celebrate = 0; // segundos que dura la celebración tras anotar
   let flick = 0;
   let missStreak = 0;
+  /*
+   * RACHA DE ACIERTOS DEL TAKEOVER (T3).
+   *
+   * Es una variable PROPIA y no se toca `missStreak` para reutilizarla: aquélla
+   * cuenta FALLOS y alimenta la asistencia del tiro (`assist = missStreak >= 3`),
+   * así que mezclarla con los aciertos cambiaría la dificultad del juego. Ésta
+   * cuenta lo contrario (aciertos seguidos) y sólo enciende el fuego.
+   * `takeover` es el modo encendido; se apaga al fallar, no por tiempo.
+   */
+  let hitStreak = 0;
+  let takeover = false;
   let mvpShown = false;
+
+  /*
+   * MATE EN CARRERA (lote B).
+   *
+   * La animación vive en `dunk.ts` (lógica pura, con sus tests); aquí sólo está
+   * el estado que la conecta con el mundo: la propia animación, el peso de su
+   * capa de pose y el ritmo al que venía el jugador cuando soltó.
+   */
+  const dunk = newDunk();
+  let dunkW = 0;
+
+  /*
+   * CONCURSO DE TRIPLES (lote B).
+   *
+   * Las reglas viven en `contest.ts` (con sus tests); aquí está el estado que las
+   * conecta con el mundo: el minijuego, la mejor marca guardada y el aviso que el
+   * HUD enseña cuando toca correr al carro siguiente.
+   */
+  const concurso = nuevoConcurso();
+  let mejorConcurso = loadMejorConcurso();
+  /*
+   * LA VOZ DEL CONCURSO.
+   *
+   * El comentarista es de la CABINA, no del juego: aquí sólo se le cuenta lo que
+   * pasa (`decir`) y él decide si merece una frase y cuánto se queda. Las reglas
+   * y las frases están en `commentary.ts`, que se comprueba sin navegador; lo que
+   * vive aquí es el único dato que necesita el mundo real: el reloj.
+   *
+   * Se le pasa `performance.now()` y no el tiempo de las animaciones (`time`), que
+   * con `prefers-reduced-motion` llega congelado a 0: con ése, los plazos del
+   * comentarista no vencerían nunca y la primera frase se quedaría pegada.
+   */
+  const comentarista = nuevoComentarista();
+  /** Suelta lo que acaba de pasar a la cabina, y pinta la frase si se la gana. */
+  function decir(s: Suceso): void {
+    const f = comentar(comentarista, s, performance.now());
+    if (f) hud.subtitle(f.texto, f.ms);
+  }
+  /*
+   * APARICIÓN DEL RECORRIDO (lote B, ajuste posterior).
+   *
+   * Segundos que tarda un puesto en crecer del parqué y progreso 0..1 de esa
+   * animación; los carros existen siempre, pero nacen ocultos y con escala 1. Lo
+   * mueve `update()` y lo reinicia `mostrarPuestos()`. Ver `mostrarPuestos()`
+   * para por qué se anima en vez de aparecer de golpe.
+   */
+  const PUESTOS_APARICION = 0.28;
+  let puestosT = 1;
+  /**
+   * Ritmo BRUTO del último fotograma con movimiento (0..1 de la velocidad tope).
+   *
+   * Es lo que decide si un tiro cerca del aro es un MATE EN CARRERA o el tiro de
+   * cerca de siempre: el propietario lo pidió así («sólo si está corriendo»). Se
+   * guarda en una variable propia y no se reutiliza `speed01` porque `speed01`
+   * está SUAVIZADO (tarda ~0,3 s en reflejar el arranque) y además se apaga solo
+   * mientras se carga el tiro: al soltar ya no diría a qué velocidad venía el
+   * jugador, que es justo el dato que hace falta.
+   */
+  let ritmoBruto = 0;
+
+  /**
+   * Un tiro que NO entró, contado una sola vez.
+   *
+   * Vive en una función y no suelto en la rama del balón quieto porque hay DOS
+   * formas de que un tiro termine sin canasta: que el balón se pare en la pista
+   * (`ball.settled`) o que el jugador lo recoja con la mano antes de que se
+   * pare. La segunda es la habitual en este juego —el rebote casi siempre vuelve
+   * hacia el jugador— y no contaba: la racha del Takeover (y la asistencia de
+   * `missStreak`, que ya existía) sólo se enteraban de los fallos que se
+   * quedaban quietos en el suelo, así que se podía fallar toda la partida sin
+   * que el fuego se apagara nunca.
+   *
+   * El juicio es `ball.scored`, que es lo que sabe si el balón pasó por el aro,
+   * y no «ha pasado tiempo»: un balón que la recoge la mano después de ENTRAR no
+   * es un fallo.
+   */
+  function fallarTiro(): void {
+    // Si hay concurso, el fallo también es del concurso: apunta el tiro y deja
+    // al carro preparado para el siguiente balón.
+    if (concurso.activo) {
+      resolverTiro(concurso, false);
+      decir({ tipo: 'fallo' });
+      hud.setContest(infoConcurso());
+    }
+    // Reacción de frustración: hombros caídos y mirada al suelo un segundo.
+    frustracion = 1;
+    missStreak++;
+    if (takeover) {
+      takeover = false;
+      hud.toast(t('takeover_miss'), 2000);
+    }
+    hitStreak = 0;
+    hud.setTakeover(0, false);
+  }
 
   function nearestSide(): Side {
     return Math.abs(pos.x - rimX(-1)) <= Math.abs(pos.x - rimX(1)) ? -1 : 1;
@@ -1178,13 +1446,52 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
   function onScore(side: Side): void {
     sfx.swish();
     // El «golpe» de la canasta: media décima de segundo de sacudida.
-    shake = SHAKE_TIME;
+    sacudir(SHAKE_TIME, SHAKE_AMP);
+    /*
+     * CONCURSO: la canasta suma, y suma lo que valía el balón que se tiró. Se
+     * resuelve AQUÍ y no en el bucle porque el tanto lo canta la física del aro
+     * (`Ball.integrate` → `onScore`), que es el único sitio donde se sabe que el
+     * balón ha entrado de verdad.
+     */
+    /*
+     * ¿ES SOBRE LA BOCINA? El balón salió antes de que el reloj llegara a 0
+     * —después ya no se puede lanzar— y entra con el tiempo agotado: vale igual y
+     * se canta. Se pregunta ANTES de resolver (el aviso es del tiro que acaba de
+     * entrar) y el canto va al final de la función, con el resto de avisos.
+     */
+    const sobreLaBocina = enBocina(concurso);
+    if (concurso.activo) {
+      const suma = resolverTiro(concurso, true);
+      /*
+       * La canasta se canta con lo que VALÍA el balón que se tiró: `dinero`
+       * pertenece al balón en juego y `resolverTiro` no lo toca (sólo lo reescribe
+       * la próxima recogida), así que aquí sigue siendo el del tiro que acaba de
+       * entrar. Y la racha la acaba de subir `resolverTiro`.
+       */
+      decir({ tipo: 'canasta', suma, puntos: concurso.puntos, dinero: concurso.dinero, racha: concurso.racha });
+      hud.setContest(infoConcurso());
+    }
     const crowdFx2 = courtGroup.userData.crowdFx as { wave: { value: number }; jump: { value: number } } | undefined;
     if (crowdFx2) {
       crowdFx2.jump.value = 1;
       crowdFx2.wave.value = 0;
     }
     missStreak = 0;
+    /*
+     * RACHA DE ACIERTOS: +1 por canasta y, al llegar a `TAKEOVER_HITS`, el balón
+     * se enciende. Va ANTES de los early-returns de abajo (zona desbloqueada,
+     * canasta sin zona…) porque la racha no depende de qué canasta sea: cuenta
+     * aciertos, no recompensas.
+     */
+    let anunciarTakeover = false;
+    hitStreak += 1;
+    if (!takeover && hitStreak >= TAKEOVER_HITS) {
+      takeover = true;
+      sfx.cheer();
+      anunciarTakeover = true;
+      scoreboard.flash(t('takeover_tag'), 1600);
+    }
+    hud.setTakeover(hitStreak, takeover);
     stats.made++;
     saveStats(stats);
     hud.setRecord(stats.made, stats.attempted);
@@ -1192,27 +1499,53 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
 
     const zone = zoneFor(side);
     // La canasta derecha ya no desbloquea nada: solo suma al récord.
-    if (!zone || zone.kind !== 'shoot') {
+    if (!zone || zone.kind !== 'shoot' || unlocked.has(zone.id)) {
       hud.toast(t('shot_basket'));
-      return;
+    } else {
+      unlocked.add(zone.id);
+      saveSet('court.unlocked', unlocked);
+      refreshMenu();
+      sfx.cheer();
+      hud.toast(`${t('unlocked')}: ${t(sectionKey(zone.id))}`, 3000);
+      window.setTimeout(() => mode === 'play' && openSection(zone.id, false), 1300);
     }
-    if (unlocked.has(zone.id)) {
-      hud.toast(t('shot_basket'));
-      return;
-    }
-    unlocked.add(zone.id);
-    saveSet('court.unlocked', unlocked);
-    refreshMenu();
-    sfx.cheer();
-    hud.toast(`${t('unlocked')}: ${t(sectionKey(zone.id))}`, 3000);
-    window.setTimeout(() => mode === 'play' && openSection(zone.id, false), 1300);
+    /*
+     * EL AVISO DEL TAKEOVER VA EL ÚLTIMO, y no es un detalle de estilo: en la
+     * primera versión se enseñaba nada más entrar en la racha y el «¡Canasta!»
+     * de la línea de arriba lo pisaba en el MISMO fotograma —el mismo elemento
+     * del DOM—, así que el jugador que encendía el fuego nunca llegaba a leer
+     * que lo había encendido. Medido en vivo: el aviso sólo se veía cuando la
+     * canasta no era de zona (que no lleva toast) o cuando no desbloqueaba nada.
+     */
+    if (anunciarTakeover) hud.toast(t('takeover_on'), 3000);
+    /*
+     * Y el de la BOCINA, detrás del de la canasta, por lo mismo que el del
+     * Takeover y por la misma lección aprendida: el «¡Canasta!» de arriba escribe
+     * en el MISMO elemento del DOM, así que anunciarlo antes es no anunciarlo.
+     *
+     * Va el ÚLTIMO de los tres porque es el momento más raro de todos: la canasta
+     * que sale antes de la bocina y entra después. Y el Takeover no se pierde
+     * aunque lo tape: sus muescas se quedan encendidas en el HUD.
+     */
+    if (sobreLaBocina) hud.toast(t('contest_buzzer_beater'), 3200);
   }
 
-  function shoot(meter: number): void {
+  /**
+   * Cuenta un INTENTO. Lo comparten el tiro y el mate en carrera: los dos son
+   * tiros, y con el contador duplicado el día que se tocara uno el porcentaje de
+   * acierto (`made/attempted`) mentiría.
+   */
+  function contarIntento(): void {
     stats.attempted++;
     saveStats(stats);
     hud.setRecord(stats.made, stats.attempted);
     scoreboard.setScore(stats.made, stats.attempted);
+  }
+
+  function shoot(meter: number): void {
+    contarIntento();
+    // Concurso: el reloj arranca con el PRIMER TIRO, no al convocar.
+    arrancarReloj(concurso);
     const side = nearestSide();
     const rim = new THREE.Vector3(rimX(side), RIM.y, 0);
     const from = new THREE.Vector3(pos.x + Math.sin(rotY) * 0.2, 2.15, pos.z + Math.cos(rotY) * 0.2);
@@ -1246,6 +1579,27 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
       // HUD no se mira: el texto tapa el récord un segundo y vuelve solo.
       scoreboard.flash(t('shot_perfect'), 1200);
     }
+  }
+
+  /**
+   * EL GOLPE DEL MATE (lote B).
+   *
+   * El balón no se «suelta»: se METE. Y no se teletransporta al fondo de la red:
+   * aparece justo encima del aro y cae, así que el tanto lo canta la MISMA física
+   * que cualquier tiro —`Ball.integrate` cruza el plano del aro hacia abajo y
+   * llama a `onScore`— con todo lo que eso trae: racha del Takeover, récord,
+   * desbloqueo de zona. Nada de `made++` a mano: si el balón no entrara por el
+   * aro, no habría canasta, que es la única forma de que un mate valga.
+   *
+   * La cámara vibra AQUÍ, en el instante del golpe, que es cuando lo pidió el
+   * propietario, y la red se sacude con el golpe entero (`bumpNet(1)`), no con el
+   * roce de un aro.
+   */
+  function machacar(): void {
+    ball.launch(new THREE.Vector3(rimX(dunk.side), RIM.y + 0.16, 0), new THREE.Vector3(0, -3.6, 0));
+    sacudir(SHAKE_DUNK_TIME, SHAKE_DUNK_AMP);
+    bumpNet(1);
+    sfx.release();
   }
 
   const tmp = new THREE.Vector3();
@@ -1320,6 +1674,271 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
     ball.object.position.copy(ball.pos);
   }
 
+  /* ───────── Concurso de triples (lote B) ───────── */
+
+  /** Resumen que pinta el HUD mientras hay concurso, o `null` si no lo hay. */
+  function infoConcurso(): {
+    t: number; puntos: number; carro: number; total: number; balones: number; aviso: string | null;
+  } | null {
+    if (!concurso.activo) return null;
+    /*
+     * Con la bocina sonada el aviso manda sobre cualquier otro: el reloj está a
+     * 0, el concurso sigue abierto y el jugador tiene que saber por qué (el balón
+     * que va por el aire todavía vale). El aviso de la bola del dinero en ese
+     * momento sería engañoso: ya no se puede lanzar.
+     */
+    const aviso = enBocina(concurso)
+      ? t('contest_hint_buzzer')
+      : concurso.esperando
+        ? concurso.dinero
+          ? t('contest_hint_money')
+          : null
+        : concurso.balones > 0
+          ? null
+          : quedanCarros(concurso)
+            ? t('contest_hint_next')
+            : null;
+    return {
+      t: concurso.t,
+      puntos: concurso.puntos,
+      carro: concurso.carro,
+      total: TRIPLES.length,
+      balones: concurso.balones,
+      aviso,
+    };
+  }
+
+  /**
+   * El balón, a las manos, con la transición de siempre (nunca de un salto).
+   *
+   * `desde` es de dónde SALE el balón cuando no sale de donde está: la recogida
+   * del concurso viene de la bandeja del puesto, así que hay que colocarlo allí
+   * antes de abrir la ventana de recogida —si no, sube a las manos desde el último
+   * sitio donde estuvo, que es lo que hacía que el balón que el jugador traía
+   * pareciera el mismo en vez de uno del carro—. Sin `desde` se recoge desde su
+   * posición actual, que es lo normal: rodando por la pista o cayendo por la red.
+   */
+  function darBalonAlJugador(desde?: THREE.Vector3): void {
+    if (ball.state === 'held' && !desde) return;
+    ball.state = 'held';
+    if (desde) ball.pos.copy(desde);
+    recogeDesde.copy(ball.pos);
+    recogeT = 0;
+  }
+
+  /**
+   * Posición del balón que hay en la BANDEJA de un puesto, en coordenadas de mundo.
+   *
+   * Es el de más a la derecha que siga a la vista, que es justo el que va a
+   * desaparecer de la bandeja en cuanto `tomarBalon` baje la cuenta: así el balón
+   * que el jugador se lleva es EL que se ve irse. Si el puesto no tiene ninguno a
+   * la vista (no debería: `puedeCoger` exige balones) se recoge desde el centro de
+   * la bandeja, que es un punto plausible y no un rincón del mundo.
+   */
+  const tmpBandeja = new THREE.Vector3();
+  function balonDeLaBandeja(i: number): THREE.Vector3 {
+    const p = puestos[i];
+    if (!p) return tmpBandeja.set(pos.x, 0.86, pos.z);
+    for (let k = p.balls.length - 1; k >= 0; k--) {
+      const b = p.balls[k]!;
+      if (b.visible) return b.getWorldPosition(tmpBandeja);
+    }
+    return p.group.getWorldPosition(tmpBandeja).setY(0.78);
+  }
+
+  /**
+   * EL REBOTEADOR: pone en las manos del jugador un balón del puesto que toca.
+   *
+   * Es el ÚNICO sitio que reparte balones del concurso, y por eso cubre los dos
+   * casos de una vez:
+   *  · el balón está por ahí (rodando, cayendo por la red o en el aire) y sube a
+   *    las manos;
+   *  · el jugador YA traía uno (un rebote que recogió cruzando por encima), y ése
+   *    se deja: el balón del turno es el de la bandeja.
+   *
+   * El segundo caso no es cosmético: es el arreglo de «el primer tiro tras cambiar
+   * de carro no sale». Con un balón en la mano sin haber pasado por `tomarBalon`,
+   * la bandera `esperando` se quedaba en false (la apaga la resolución del tiro
+   * anterior) y `puedeCoger` sólo mira esa bandera, así que al lanzar el reboteador
+   * entendía que no había balón en juego y le daba OTRO en el mismo fotograma: el
+   * balón salía y volvía a la mano, y había que volver a tirar para que contara.
+   * Llamando aquí a `tomarBalon` el balón queda marcado como en juego ANTES de que
+   * se pueda lanzar, y el que llega es el de la bandeja.
+   */
+  function cogerBalonDelPuesto(): void {
+    const traia = ball.state === 'held';
+    /*
+     * `tomarBalon` devuelve si el que llega es la «bola del dinero» (la última del
+     * carro), que es lo que canta la cabina: el aviso del HUD lo dice desde que se
+     * coge —el jugador tiene que saber que vale doble ANTES de tirar— y el
+     * comentarista lo suelta en el mismo momento, que es cuando la grada se
+     * levanta.
+     */
+    if (tomarBalon(concurso)) decir({ tipo: 'dinero' });
+    darBalonAlJugador(traia ? balonDeLaBandeja(concurso.carro) : undefined);
+  }
+
+  /**
+   * ENSEÑA U OCULTA EL RECORRIDO DEL CONCURSO (lote B, ajuste del propietario).
+   *
+   * En la pista sólo está el carrito de la esquina (que es el primer puesto): los
+   * otros cuatro se colocan al convocar y se van al terminar, así que la cancha se
+   * queda limpia para el baloncesto de siempre. Los tres elementos de cada puesto
+   * van juntos (carro, anillo y mancha) porque por separado uno se queda
+   * descolgado: un anillo naranja de puesto sin carro, o al revés.
+   *
+   * Los carros VUELVEN LLENOS: `empezar()` deja `balones` en tres y los que se
+   * gastaron en la partida anterior no se recuerdan. Y la escala se devuelve a 1
+   * siempre, incluso al esconderlos: si se quedara a media aparición, el concurso
+   * siguiente empezaría a crecer desde donde se quedó el anterior.
+   *
+   * `puestosT` no es un booleano de encendido: es el progreso de la aparición, y
+   * dejarlo en 0 al enseñarlos es lo que dispara la animación en `update()`.
+   */
+  function mostrarPuestos(on: boolean): void {
+    puestosT = on ? 0 : 1;
+    for (const c of carros) {
+      c.group.visible = on;
+      c.group.scale.y = 1;
+    }
+    for (const r of ringsPuestos) r.visible = on;
+    for (const m of marcasPuestos) m.visible = on;
+    /*
+     * Los balones los pone el ESTADO y no un `visible = on` en bucle: el carrito
+     * está siempre en la pista y sus balones no se apagan al terminar el concurso,
+     * se recargan (`balonesVisibles(0)` devuelve tres sin concurso), mientras que
+     * los de los cuatro carros que se van sí tienen que quedar a cero.
+     */
+    sincronizarBalones();
+  }
+
+  /**
+   * CUÁNTOS BALONES SE VEN EN CADA PUESTO.
+   *
+   * Es la cuenta del HUD («●●○») trasladada al mundo, y sale del estado del
+   * concurso, no de cuántos balones se han tocado: una sola fuente. Sin concurso
+   * sólo existe el carrito, y está lleno —es de donde se coge el balón para jugar
+   * al baloncesto normal, así que tiene que tener balones aunque no haya minijuego—.
+   */
+  function balonesVisibles(i: number): number {
+    if (!concurso.activo) return i === 0 ? CONCURSO.balones : 0;
+    if (i < concurso.carro) return 0; // los de atrás se quedaron vacíos
+    if (i > concurso.carro) return CONCURSO.balones; // los de delante, sin tocar
+    // El puesto que toca: menos el que el jugador tiene en las manos (o en el aire).
+    return Math.max(0, concurso.balones - (concurso.esperando ? 1 : 0));
+  }
+
+  /**
+   * LOS BALONES DEL CARRO, EN EL MUNDO, y tanto si se encesta como si se falla.
+   *
+   * La cuenta del HUD («●●○») se ve en la bandeja: los balones que ya están
+   * tirados desaparecen del carro, así que se sabe cuántos quedan sin mirar
+   * arriba. La bajada la decide el ESTADO (`concurso.balones`), y ese descuento lo
+   * hace `resolverTiro()` en los dos desenlaces —`onScore` para la canasta y
+   * `fallarTiro` para el fallo—, así que el balón se va igual si entra que si no y
+   * nunca vuelve a la bandeja.
+   *
+   * Mientras el balón va por el aire (`esperando`) se descuenta el que se está
+   * tirando, que es el que el jugador tiene en las manos: si se descontara al
+   * resolver el tiro, el balón se vería a la vez en la mano y en la bandeja.
+   *
+   * Se escribe SÓLO cuando cambia el valor: 15 escrituras de propiedad por
+   * fotograma durante un minuto no se notan, pero no hay ninguna razón para
+   * hacerlas.
+   */
+  function sincronizarBalones(): void {
+    puestos.forEach((p, i) => {
+      const quedan = balonesVisibles(i);
+      for (let k = 0; k < p.balls.length; k++) {
+        const on = k < quedan;
+        if (p.balls[k]!.visible !== on) p.balls[k]!.visible = on;
+      }
+    });
+  }
+
+  /** Convoca el concurso desde el carrito de la esquina (E). */
+  function convocarConcurso(): void {
+    empezar(concurso);
+    mostrarPuestos(true);
+    /*
+     * EL PRIMER BALÓN ES DEL CARRITO.
+     *
+     * El que el jugador traía de la pista se queda fuera: al empezar el concurso
+     * se coge uno de la bandeja del primer carro (el carrito en el que está de
+     * pie) y se ve llegar del carro a las manos. Lo hace el mismo reboteador que
+     * el resto de la partida (`cogerBalonDelPuesto`), así que no hay dos reglas
+     * para lo mismo.
+     *
+     * Va DESPUÉS de `mostrarPuestos()` y con la comprobación de alcance: el alcance
+     * de recogida (1,2 m) es más corto que el de la E (1,8 m), así que quien convoca
+     * desde el borde de la zona recibe el balón al acercarse, un paso después.
+     */
+    if (puedeCoger(concurso, pos.x, pos.z)) cogerBalonDelPuesto();
+    sfx.click();
+    hud.toast(t('contest_on'), 3000);
+    decir({ tipo: 'arranque' });
+    hud.setContest(infoConcurso());
+  }
+
+  /**
+   * Cierra el concurso y deja el mundo como estaba.
+   *
+   * La marca se guarda SÓLO si mejora: el concurso es una partida de 60 s y
+   * perder una no puede borrar la mejor que se haya hecho nunca.
+   */
+  function terminarConcurso(motivo: 'tiempo' | 'carros'): void {
+    const { puntos, aciertos, tiros } = concurso;
+    if (motivo === 'carros') terminar(concurso);
+    else salir(concurso);
+    mostrarPuestos(false);
+    const record = puntos > mejorConcurso;
+    if (record) {
+      mejorConcurso = puntos;
+      saveMejorConcurso(puntos);
+    }
+    sfx.cheer();
+    hud.setContest(null);
+    hud.toast(
+      `${motivo === 'tiempo' ? t('contest_end_time') : t('contest_end')} · ${puntos} · ${aciertos}/${tiros}` +
+        (record ? ` · ${t('contest_best')}` : ''),
+      4200,
+    );
+    /*
+     * El marcador final lo dice el AVISO de arriba con sus números, y la cabina
+     * lo canta abajo: es el único momento del concurso en el que se habla dos
+     * veces, y a propósito —uno es el rótulo del resultado y el otro la voz que lo
+     * despide—. El «récord» no se repite: el aviso ya lo dice y la frase lo mete
+     * en la misma línea del marcador.
+     */
+    decir({ tipo: 'final', puntos, aciertos, tiros, record });
+    darBalonAlJugador();
+  }
+
+  /** Deja el concurso a medias (se pulsa E en el carrito). */
+  function abandonarConcurso(): void {
+    salir(concurso);
+    hud.setContest(null);
+    hud.hideSubtitle();
+    mostrarPuestos(false);
+    darBalonAlJugador();
+  }
+
+  const tmpHand = new THREE.Vector3();
+  /**
+   * El balón, colgado de la MANO que machaca mientras dura la animación.
+   *
+   * Con `placeHeldBall` el balón iría al regate o contra el pecho —o sea, a la
+   * altura de la cadera— mientras el cuerpo vuela hacia el aro con los brazos
+   * arriba: el gesto se leería al revés. `handWorld` da el centro de la mano
+   * derecha YA POSADA (la pose se aplica antes, en `animateHuman`), así que el
+   * balón sube con el brazo y llega al aro en la mano, que es de donde sale el
+   * mate.
+   */
+  function colgarBalonDeLaMano(): void {
+    ball.pos.copy(handWorld(player, 1, tmpHand));
+    ball.object.position.copy(ball.pos);
+  }
+
   /*
    * SPIN DEL BALÓN (punto P3).
    *
@@ -1379,12 +1998,38 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
    *  · `land`: 1 justo al tocar suelo y baja a 0 en un cuarto de segundo.
    */
   const SHAKE_TIME = 0.15;
+  /** Amplitud de la sacudida de la canasta, en metros (±2,2 cm). */
+  const SHAKE_AMP = 0.022;
+  /*
+   * SACUDIDA DEL MATE.
+   *
+   * Más larga y más ancha que la del aro (0,3 s y 5,5 cm contra 0,15 s y 2,2 cm),
+   * porque un mate se siente en todo el pabellón y una canasta no. «Ligeramente»
+   * es literal: 5,5 cm sobre una cámara que está a 16 m se lee como un golpe y no
+   * como un terremoto, y sigue por debajo del umbral al que la escena se marea.
+   */
+  const SHAKE_DUNK_TIME = 0.3;
+  const SHAKE_DUNK_AMP = 0.055;
   let advX = 0;
   let advZ = 0;
   let advTargetX = 0;
   let advTargetZ = 0;
   let zoomNow = 1;
   let shake = 0;
+  let shakeDur = SHAKE_TIME;
+  let shakeAmp = SHAKE_AMP;
+  /**
+   * Pide una sacudida de cámara: `dur` segundos con amplitud `amp` en metros.
+   *
+   * La amplitud vive con la duración, en vez de ser una constante fija del bucle,
+   * porque ahora hay DOS golpes distintos —la canasta y el mate— y el temblor
+   * tiene que poder cambiar de uno a otro sin tocar la fórmula.
+   */
+  function sacudir(dur: number, amp: number): void {
+    shake = dur;
+    shakeDur = dur;
+    shakeAmp = amp;
+  }
   let camTime = 0;
   let land = 0;
   let wasGrounded = true;
@@ -1435,8 +2080,51 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
 
   function updateCamera(dt: number, snap = false): void {
     if (import.meta.env.DEV && dbg.freeze) return;
-    const sec = sectionCam ? SECTION_CAMERA[sectionCam] : null;
-    if (sec) {
+    /*
+     * ÓRBITA CINEMÁTICA DE LA PUERTA DE IDIOMA.
+     *
+     * La escena que hay detrás del selector ya está construida y horneada, así
+     * que enseñarla no cuesta nada: sólo mueve la matriz de la cámara, igual que
+     * la micro-órbita del panel de más abajo.
+     *
+     * Gira alrededor del CENTRO de la pista, que es donde aparece el jugador, y
+     * no alrededor del jugador: aquí no hay nadie dirigiendo nada, así que
+     * perseguir su posición daría un plano que cabecea sin motivo.
+     *
+     * El radio y la altura NO salen de la cámara del juego (la de juego va a
+     * 12,4 m con fov 32, encuadrando un tercio de pista). Esta tiene que ver
+     * la cancha entera y dos protagonists, así que sube y se retira.
+     *
+     * Con `prefers-reduced-motion` no gira: se queda en el ángulo de partida.
+     */
+    if (mode === 'attract') {
+      const th = reduced ? -0.6 : camTime * 0.115 + -0.6;
+      const r = 21;
+      camGoal.set(Math.sin(th) * r, 9.5, Math.cos(th) * r);
+      lookGoal.set(0, 1.6, 0);
+      zoomNow += (1 - zoomNow) * (1 - Math.exp(-6 * Math.max(dt, 0)));
+      const k = snap ? 1 : 1 - Math.exp(-CAMERA.lerp * dt);
+      camera.position.lerp(camGoal, k);
+      lookNow.lerp(lookGoal, k);
+      camera.lookAt(lookNow);
+      return;
+    }
+    /*
+     * PLANO DE LA CÁMARA DE TELEVISIÓN (lote B).
+     *
+     * `mode === 'interview'` significa «el plató está en directo», que es cuando
+     * el jugador está de pie en el punto de la entrevista: ahí la cámara ya no es
+     * la del juego, es la de la tele. Se entra con el mismo lerp que todo lo
+     * demás, así que el cambio de plano es el viaje de la cámara y no un corte.
+     */
+    let fovObjetivo: number = CAMERA.fov;
+    const sec = mode === 'interview' ? null : sectionCam ? SECTION_CAMERA[sectionCam] : null;
+    if (mode === 'interview') {
+      camGoal.set(...INTERVIEW.pov.pos);
+      lookGoal.set(...INTERVIEW.pov.look);
+      fovObjetivo = CAMERA.tvFov;
+      zoomNow += (1 - zoomNow) * (1 - Math.exp(-6 * Math.max(dt, 0)));
+    } else if (sec) {
       // Plano de sección: bajo, cercano y fijo. No se escala por `dist` (la
       // compensación de aspecto del plano de juego), porque aquí la distancia
       // a la sección es la que da el encuadre y no el formato de la pantalla.
@@ -1477,6 +2165,15 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
     camera.position.lerp(camGoal, k);
     lookNow.lerp(lookGoal, k);
     /*
+     * El FOV sólo se recalcula cuando CAMBIA: `updateProjectionMatrix()` son
+     * nueve números y una matriz nueva, y aquí se pasaría por él sesenta veces
+     * por segundo para nada.
+     */
+    if (camera.fov !== fovObjetivo) {
+      camera.fov = fovObjetivo;
+      camera.updateProjectionMatrix();
+    }
+    /*
      * SACUDIDA de la canasta (fase C): 0,15 s de ±2,2 cm. Tres senos de
      * frecuencias distintas y desfasadas para que el temblor no se lea como un
      * vaivén en una sola dirección, y con la amplitud cayendo a cero, que es lo
@@ -1484,7 +2181,7 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
      */
     if (shake > 0 && !reduced) {
       shake = Math.max(0, shake - dt);
-      const a = 0.022 * (shake / SHAKE_TIME);
+      const a = shakeAmp * (shake / shakeDur);
       camera.position.x += Math.sin(camTime * 61) * a;
       camera.position.y += Math.sin(camTime * 47 + 1.7) * a;
       camera.position.z += Math.sin(camTime * 53 + 3.1) * a;
@@ -1515,6 +2212,31 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
   const clock = new THREE.Clock();
   const gl = renderer.getContext();
   let raf = 0;
+
+  /*
+   * ¿Hay un bucle de render en marcha?
+   *
+   * `frame()` se re-encola a sí misma en su primera línea, así que el bucle se
+   * sostiene solo. Al pedir uno nuevo hay que saber si ya hay otro en marcha: la
+   * cinemática de la puerta arranca uno (`beginAttract`) y, si el visitante elige
+   * idioma, `start()` pide otro. Sin este guarda habría DOS cadenas y cada
+   * fotograma se dibujaría dos veces, con el coste duplicado y sin que nada lo
+   * delate.
+   *
+   * IMPORTANTE: la comprobación va AQUÍ, en quien PIDE el bucle, y NO dentro de
+   * `frame()`. Dentro cortaba la cadena: la primera llamada programaba un
+   * sucesor, ese sucesor se salía por el guarda sin volverse a encolar, y el
+   * juego se quedaba congelado en el fotograma de la precarga —con la puerta
+   * cerrada y sin poder moverse, que es justo lo que se ve si esto falla.
+   */
+  let bucleActivo = false;
+
+  /** Pide un fotograma, salvo que el bucle ya esté en marcha. */
+  function pedirBucle(): void {
+    if (bucleActivo) return;
+    bucleActivo = true;
+    raf = requestAnimationFrame(frame);
+  }
 
   /*
    * CALIDAD ADAPTATIVA CON OBJETIVO DE 60 FPS.
@@ -1791,8 +2513,38 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
     advTargetX = 0;
     advTargetZ = 0;
 
-    if (playing) {
-      const wants = input.shootHeld && ball.state === 'held';
+    /*
+     * MATE EN CARRERA (lote B): MIENTRAS DURA LA ANIMACIÓN, EL INPUT ESTÁ
+     * BLOQUEADO.
+     *
+     * El bloque va ANTES de la rama del juego y deja `playing && !dunk.activo`
+     * en la condición de abajo, de modo que durante la animación no corre ni el
+     * movimiento, ni la carga del tiro, ni el regate: el jugador ve la carrera
+     * al aro y el golpe, y no puede hacer nada hasta que el cuerpo toca el suelo.
+     * La posición la manda la animación (nada de física: es un gesto coreografiado
+     * de 0,68 s, no una simulación) y las piernas siguen moviéndose durante el
+     * vuelo, que es lo que hace que se lea como una carrera hacia el aro y no
+     * como un deslizamiento.
+     */
+    if (dunk.activo) {
+      const paso = stepDunk(dunk, dt);
+      pos.x = dunkX(dunk);
+      pos.z = dunkZ(dunk);
+      rotY = lerpAngle(rotY, Math.atan2(rimX(dunk.side) - pos.x, -pos.z), 1 - Math.exp(-18 * dt));
+      speedTarget = paso.golpe ? 0.25 : 1;
+      if (paso.golpe) machacar();
+    }
+    if (playing && !dunk.activo) {
+      /*
+       * CON QUÉ BALÓN SE PUEDE TIRAR (concurso).
+       *
+       * Durante el concurso sólo se tira con un balón EN JUEGO, que es el que da
+       * el reboteador: con un balón en las manos que el concurso no reconoce (el
+       * último de un carro ya vacío, o el rebote que el jugador traía de antes) el
+       * tiro no sale. Con eso, el tiro y la cuenta del carro no se pueden
+       * desincronizar: cuando se lanza, siempre hay un balón del carro detrás.
+       */
+      const wants = input.shootHeld && ball.state === 'held' && puedeTirar(concurso);
       if (wants && !charging) {
         charging = true;
         chargeT = 0;
@@ -1812,13 +2564,46 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
         const sweetC = sweetCenterAt(chargeT);
         hud.showMeter(meterAt(chargeT), sweetSpotAt(difficultyAt(distAro)), Math.min(chargeT / CHARGE_FULL, 1), sweetC);
         if (!input.shootHeld) {
-          shoot(meterAt(chargeT));
+          /*
+           * GESTO SEGÚN LA DISTANCIA (T4).
+           *
+           * `distAro` ya está calculado arriba para la dificultad del medidor, y
+           * aquí es un fotograma antes de soltar: es el único sitio en el que la
+           * distancia al aro y el momento del tiro coinciden. El gesto NO toca la
+           * física (la parábola sigue saliendo de `solveShot`).
+           */
+          gestoTiro = distAro <= DUNK_RANGE ? 'dunk' : distAro >= LONG_RANGE ? 'lejano' : 'tiro';
+          /*
+           * MATE EN CARRERA (lote B).
+           *
+           * Dos condiciones y ningún `else` de más: cerca del aro Y llegando
+           * corriendo (`DUNK_RUN_MIN`). Quieto, o incluso caminando, esto NO se
+           * activa y el tiro de cerca se resuelve como siempre —que es lo que el
+           * propietario dijo que estaba bien—.
+           *
+           * Aquí no se llama a `shoot()`: no hay trayectoria que solvear, porque
+           * el balón no se lanza. Sale de la mano en el aro, en `machacar()`.
+           */
+          if (gestoTiro === 'dunk' && puedeMate(distAro, ritmoBruto, DUNK_RANGE, DUNK_RUN_MIN)) {
+            contarIntento();
+            startDunk(dunk, pos.x, pos.z, nearestSide());
+            sfx.release();
+          } else {
+            shoot(meterAt(chargeT));
+          }
           charging = false;
           hud.showMeter(null);
         }
       } else {
         const mv = input.move();
         const len = Math.hypot(mv.x, mv.z);
+        /*
+         * El ritmo se actualiza AQUÍ, donde está la entrada, y se queda quieto
+         * mientras el tiro se carga (este bloque no corre con la carga en
+         * marcha). Así, al soltar, el valor que lee el mate es la velocidad a la
+         * que el jugador venía al pulsar espacio, no la que tendría al soltar.
+         */
+        ritmoBruto = len > 0.05 ? Math.min(1, len) : 0;
         if (len > 0.05) {
           const k = Math.min(1, len);
           const dx = mv.x / len;
@@ -1844,10 +2629,15 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
           // cada fotograma, se evita el parpadeo: hace falta acumular otros 40°
           // para volver a cambiar, así que correr en arco no encadena cambios.
           const dirAngle = Math.atan2(dx, dz);
-          const giroRuta = Math.abs(wrapPi(dirAngle - lastDirAngle));
+          const giroReal = wrapPi(dirAngle - lastDirAngle);
+          const giroRuta = Math.abs(giroReal);
           if (giroRuta > HAND_SWITCH_ANGLE) {
             handSide = handSide === 1 ? -1 : 1;
             lastDirAngle = dirAngle;
+            // El lado del corte sale del SIGNO del giro de la ruta, que es la
+            // única de las dos medidas que dice hacia dónde se ha girado: la
+            // mano es un interruptor que alterna y no tiene lado.
+            if (giroReal !== 0) corteDir = giroReal > 0 ? 1 : -1;
             // La cabeza mira a la mano nueva antes de que llegue el balón (que
             // cambia de lado en el mismo instante): un giro de 0,32 rad que se
             // apaga solo en un tercio de segundo. Sin esto el cambio de mano era
@@ -1895,7 +2685,21 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
     // entero) y `land` vale 1; un roce de 1 m/s flexionaría una cuarta parte, y
     // por eso el `clamp` no se queda en 0 ni en 1.
     const velAntes = jump.vel;
-    const grounded = stepJump(jump, dt);
+    /*
+     * Durante el mate la altura la manda la ANIMACIÓN, no la gravedad: si se
+     * dejara a `stepJump`, el salto del tiro pelearía con la parábola del mate y
+     * el cuerpo llegaría al aro a media altura. Se escribe en el MISMO sitio
+     * (`jump.y`) para que todo lo de abajo —el aterrizaje, la pose de vuelo,
+     * `grounded`— siga leyendo de una sola fuente.
+     */
+    let grounded: boolean;
+    if (dunk.activo) {
+      jump.y = dunkY(dunk);
+      jump.vel = 0;
+      grounded = jump.y <= 0.001;
+    } else {
+      grounded = stepJump(jump, dt);
+    }
     pos.y = jump.y;
     if (grounded && !wasGrounded) land = clamp(-velAntes / SHOOT_JUMP, 0.25, 1.3);
     wasGrounded = grounded;
@@ -1921,6 +2725,8 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
      */
     const objetivoTiro = charging ? Math.min(chargeT / CHARGE_FULL, 1) : flick / FLICK_TIME;
     tiroW = mezclaPeso(tiroW, objetivoTiro, dt);
+    // Peso del mate en carrera. Se MEZCLA como las demás capas: nunca asigna.
+    dunkW = mezclaPeso(dunkW, dunk.activo ? dunkPose(dunk) : 0, dt);
     celeW = mezclaPeso(celeW, celebrate > 0 ? celebrate / CELEBRATION_TIME : 0, dt);
     /*
      * Peso de "balón en las manos": dentro de la ventana de recogida manda su
@@ -1938,18 +2744,90 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
       ball.state === 'held',
       grounded,
       land,
-      { handSide, regate: regate01(speed01), giro, frustracion, hold: holdW, recoge: recogePeso(recogeT) },
+      {
+        handSide, regate: regate01(speed01), giro, frustracion, hold: holdW, recoge: recogePeso(recogeT),
+        // El corte usa la MISMA señal que el giro de cabeza (el cambio de mano):
+        // un evento, dos lecturas — la cabeza mira y el cuerpo se inclina.
+        corte: Math.abs(giro), corteDir,
+      },
     );
     // Las capas de pose se MEZCLAN encima: nunca pisan los huesos.
-    if (tiroW > 0.002) poseShoot(player, tiroW);
+    if (tiroW > 0.002) {
+      if (gestoTiro === 'dunk') poseDunk(player, tiroW);
+      else if (gestoTiro === 'lejano') poseLejano(player, tiroW);
+      else poseShoot(player, tiroW);
+    }
+    /*
+     * La capa del mate en carrera va DESPUÉS del gesto del tiro: mientras dura,
+     * los brazos van arriba por el mate y no por el tiro, y como las dos son
+     * capas que mezclan, la última en hablar es la que manda.
+     */
+    if (dunkW > 0.002) poseDunk(player, dunkW);
     if (celeW > 0.002) poseCelebrate(player, animTime, celeW);
     // El decaimiento del aterrizaje, aquí y no antes: la flexión de este
     // fotograma usa el pico entero, y sólo a partir del siguiente baja.
     if (land > 0) land = Math.max(0, land - dt * 4.5);
 
     // Balón (el bote va sincronizado con la zancada: mismo reloj).
-    if (ball.state === 'held') placeHeldBall(animTime, speed01);
-    else {
+    if (ball.state === 'held') {
+      if (dunk.activo) colgarBalonDeLaMano();
+      else placeHeldBall(animTime, speed01);
+    } else if (concurso.activo) {
+      ball.step(dt);
+      spinBall(dt);
+      /*
+       * EL REBOTEADOR DEL CONCURSO.
+       *
+       * En el concurso el balón NO se va a buscar: vuelve. Un tiro resuelto (que
+       * ha entrado y ya ha caído, o que se ha quedado quieto) se le pone en las
+       * manos al tirador con la misma transición de 0,3 s que usa una recogida
+       * normal, así que se ve venir el balón en vez de aparecer.
+       *
+       * Y el juicio del tiro es el de siempre: si no entró, es un fallo también
+       * para la racha del Takeover y para la asistencia del tiro, no sólo para el
+       * marcador del concurso. Con la lógica de recogida normal esto no pasaría,
+       * porque durante el concurso el balón nunca toca el suelo de la pista a
+       * manos del jugador.
+       */
+      /*
+       * CUÁNDO ESTÁ RESUELTO EL TIRO, que en un concurso cronometrado importa
+       * tanto como acertar: en cuanto se sabe qué ha pasado, vuelve el balón.
+       *
+       *  · Si entró: cuando ya ha caído por debajo del aro (`y < 1,2 m`).
+       *    Esperar a que se pare en el suelo costaría dos segundos de reloj por
+       *    canasta, y con 15 balones eso es medio concurso.
+       *  · Si no entró: al TOCAR EL SUELO por primera vez (el balón está a la
+       *    altura de su radio y ya no sube). Eso resuelve un fallo en menos de un
+       *    segundo; con la regla de `settled` (edad > 8 s) un tiro largo que se va
+       *    fuera de la pista se comía CINCO segundos de reloj, medido en vivo.
+       *  · `settled` sigue ahí como red de seguridad para el balón que se queda
+       *    rodando sin llegar a pararse del todo.
+       */
+      const enElSuelo = ball.pos.y <= BALL.radius + 0.04 && ball.vel.y <= 0.01;
+      if (ball.scored ? ball.pos.y < 1.2 : enElSuelo || ball.settled) {
+        if (ball.scored) celebrate = CELEBRATION_TIME;
+        else fallarTiro();
+        darBalonAlJugador();
+        /*
+         * EL BALÓN QUE VUELVE ES UN BALÓN DEL CARRO, Y SE MARCA COMO TAL.
+         *
+         * El reboteador devuelve el balón a las manos, pero `resolverTiro` acaba
+         * de dejar `esperando` en false. Sin volver a marcarlo, el jugador se
+         * quedaba con un balón del carro que el juego no reconocía como en juego,
+         * y el siguiente lanzamiento disparaba OTRA recogida en el mismo
+         * fotograma —`puedeCoger` sólo mira `esperando`—: el balón salía y volvía
+         * a la mano, así que parecía que el tiro no había salido y había que
+         * tirar dos veces para que contara. Se veía sobre todo al estrenar carro,
+         * porque el balón que llega ahí viene del último tiro del anterior.
+         *
+         * Sólo se marca SI AL CARRO LE QUEDAN BALONES: con el carro vacío el que
+         * vuelve ya no es de nadie, y su tiro no cuenta como intento (lo impide
+         * la condición de disparo, que durante el concurso exige `esperando`).
+         */
+        if (concurso.activo && concurso.balones > 0) tomarBalon(concurso);
+        hud.setPrompt(null);
+      }
+    } else {
       ball.step(dt);
       spinBall(dt);
       // RECOGIDA: si el jugador pasa por encima del balón, vuelve a las manos.
@@ -1969,23 +2847,130 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
          * posición final en este mismo fotograma, y encima los brazos se
          * quedaban clavados 0,35 s en la pose de tiro del `flick`.
          */
+        // Si el balón se recoge sin haber entrado, es un fallo como el de
+        // `settled`: el tiro ya está resuelto (el aro lo habría marcado).
+        if (!ball.scored) fallarTiro();
+        ball.state = 'held';
         recogeDesde.copy(ball.pos);
         recogeT = 0;
         hud.setPrompt(null);
       } else if (ball.settled) {
         if (ball.scored) celebrate = CELEBRATION_TIME;
-        else {
-          // FRUSTRACIÓN (proactivo): hombros caídos y mirada al suelo un
-          // segundo. Sin esto, fallar sólo cambiaba un número del marcador.
-          frustracion = 1;
-          missStreak++;
-        }
+        else fallarTiro();
         ball.state = 'held';
         // Misma transición que al pasar por encima: el balón estaba parado en el
         // suelo y sube hasta las manos sin dar un salto.
         recogeDesde.copy(ball.pos);
         recogeT = 0;
       }
+    }
+
+    /*
+     * ESTELA DEL TAKEOVER (T3).
+     *
+     * La llama sigue al balón y se apaga sola: `setIntensity` sólo dice si el
+     * modo está encendido, y `FireTrail.update` envejece los puntos ya escritos,
+     * así que al fallar la cola se consume en medio segundo en vez de
+     * desaparecer de golpe.
+     *
+     * Con `prefers-reduced-motion` no se enciende: es movimiento que no aporta
+     * información de juego, y la regla de la casa es congelar lo decorativo sin
+     * dejar de jugar. La racha se sigue contando y el HUD lo enseña igual.
+     */
+    fireVel = firePrev.distanceTo(ball.pos) / Math.max(dt, 1e-4);
+    firePrev.copy(ball.pos);
+    fireTrail.setIntensity(takeover && !reduced ? 1 : 0);
+    fireTrail.update(dt, ball.pos, fireVel);
+
+    /*
+     * CONCURSO DE TRIPLES (lote B): el reboteador, el recorrido y el reloj.
+     *
+     * El orden de las tres cosas importa: primero el balón (si toca dártelo),
+     * después el carro (si el actual se ha vaciado, hay que andar al siguiente) y
+     * por último el reloj, que es el único que puede terminar la partida. Con el
+     * reloj delante, el fotograma que agota el tiempo podría dar un balón que ya
+     * no sirve para nada.
+     *
+     * El reloj también se PARA cuando se abre una sección: el concurso es
+     * cronometrado y quedarse leyendo un panel mientras corre el tiempo no es
+     * tensión, es una pérdida.
+     */
+    if (concurso.activo) {
+      /*
+       * LA BOCINA (ajuste del propietario): «deja que un tiro lanzado antes de que
+       * se agote el reloj se resuelva y cuente, como en el concurso real».
+       *
+       * `avanzarReloj` deja el reloj a 0 y `fin: 'tiempo'`, pero el concurso NO se
+       * cierra ahí: sigue `activo` mientras el balón esté VOLANDO, que es lo único
+       * que puede pasar ya —`puedeTirar` exige `fin !== 'tiempo'`, y con la bocina
+       * ni se coge balón ni se cambia de carro—, y es lo que hace que la canasta
+       * siga contando en el marcador del concurso, porque `onScore` y `fallarTiro`
+       * resuelven SÓLO si el concurso está activo.
+       *
+       * El cierre lo hace esta comprobación en el fotograma en que el balón deja de
+       * volar (el bloque de arriba acaba de devolvértelo a las manos, y el tiro ya
+       * está resuelto y sumado). Se mira `ball.state` y NO `esperando` a propósito:
+       * un balón en las MANOS con el tiempo agotado —el que el jugador no llegó a
+       * soltar— no vale nada y no puede dejar el concurso abierto para siempre.
+       *
+       * Y va ANTES del bloque de juego, no después: si el último carro se quedó
+       * vacío, `terminarConcurso('carros')` de abajo cerraría la partida como si se
+       * hubieran acabado los balones cuando lo que ha sonado es la bocina.
+       */
+      const bocina = enBocina(concurso);
+      if (bocina && ball.state !== 'flying') terminarConcurso('tiempo');
+      if (playing && concurso.activo) {
+        if (puedeCoger(concurso, pos.x, pos.z)) cogerBalonDelPuesto();
+        if (carroVacio(concurso) && !concurso.esperando) {
+          /*
+           * `avanzarCarro` devuelve `true` SÓLO en el fotograma en que el jugador
+           * está en el carro siguiente, así que ése es el momento exacto de
+           * cantarlo: el mismo `true` que antes se tiraba a la basura es el que
+           * evita que el comentarista repita la frase en cada fotograma mientras
+           * se corre hacia el carro.
+           */
+          if (quedanCarros(concurso)) {
+            if (avanzarCarro(concurso, pos.x, pos.z)) decir({ tipo: 'carro', carro: concurso.carro + 1, total: TRIPLES.length });
+          } else terminarConcurso('carros');
+        }
+        // El reloj llega a 0 y aquí no se cierra nada: si hay un balón en el aire,
+        // lo cierra la comprobación de la bocina cuando deja de volar. El `true`
+        // es el fotograma exacto en que se agota, y es lo que se canta una vez.
+        if (concurso.activo && avanzarReloj(concurso, dt)) decir({ tipo: 'bocina' });
+      }
+      hud.setContest(infoConcurso());
+      /*
+       * Los balones del carro, en el mundo (ver `sincronizarBalones`).
+       *
+       * LA GUARDA DE `activo` NO ES DECORATIVA y se descubrió jugando: en el
+       * fotograma en que se agota el reloj, `terminarConcurso()` acaba de vaciar
+       * las bandejas y este bloque, que va detrás, volvía a llenarlas con el
+       * estado del concurso ya terminado. El grupo estaba oculto, así que no se
+       * veía nada raro en pantalla, pero el mundo se quedaba diciendo que había 12
+       * balones a la vista que no existían. Medido en vivo: los balones de los
+       * puestos daban `[1,3,3,3,3]` con el concurso cerrado y los carros ocultos.
+       */
+      if (concurso.activo) sincronizarBalones();
+    }
+
+    /*
+     * APARICIÓN DEL RECORRIDO (lote B, ajuste posterior).
+     *
+     * Los cinco puestos crecen del parqué en `PUESTOS_APARICION` en vez de
+     * aparecer de golpe: un carro que sale de la nada se lee como un fallo de
+     * carga, y uno que crece se lee como que lo acaban de poner. Se escala SÓLO
+     * en Y (`x` y `z` a 1) porque la base del carro está en el suelo: crece hacia
+     * arriba, no se hincha.
+     *
+     * El ease-out (al cuadrado invertido) entra rápido y frena al final, que es lo
+     * que hace que el golpe de aparición se lea en el primer tercio. Con
+     * `prefers-reduced-motion` se salta de golpe al final: la animación no hace
+     * falta para jugar.
+     */
+    if (concurso.activo && puestosT < 1) {
+      puestosT = Math.min(1, puestosT + (reduced ? 1 : dt / PUESTOS_APARICION));
+      const k = 1 - (1 - puestosT) * (1 - puestosT);
+      for (const c of carros) c.group.scale.y = Math.max(0.02, k);
     }
 
     // Sombras de contacto: siguen al jugador y al balón, y se aclaran con la
@@ -2003,17 +2988,38 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
     if (crowdTime) crowdTime.value = time;
 
     // Zonas, avisos e interacción
+    /*
+     * Durante el mate no se abre nada: ni el aviso de interacción ni la sección.
+     * `playing` sigue siendo cierto (el bucle corre y la cámara trabaja), pero el
+     * input no manda. La tecla se sigue drenando para que no se quede encolada y
+     * dispare sola en cuanto termine la animación.
+     */
+    const jugando = playing && !dunk.activo;
+    /*
+     * EL CARRITO DE LA ESQUINA: con E se convoca (o se deja) el concurso.
+     *
+     * La INTERACCIÓN va ANTES del bloque de zonas, y no es un detalle de orden:
+     * ese bloque termina siempre con un `consumeInteract()` que vacía la tecla, así
+     * que un E pulsado en el carrito se lo comía él y no llegaba nunca aquí. El
+     * AVISO, en cambio, se pinta después (más abajo), porque el de la zona se
+     * escribe antes y pisaría al del carrito.
+     */
+    const enElCarrito = jugando && Math.hypot(pos.x - CARRITO.x, pos.z - CARRITO.z) <= 1.8;
+    if (enElCarrito && input.consumeInteract()) {
+      if (concurso.activo) abandonarConcurso();
+      else convocarConcurso();
+    }
     let active: Zone | null = null;
     let best = Infinity;
     for (const z of ZONES) {
       const d = Math.hypot(pos.x - z.x, pos.z - z.z);
       const usable = z.kind !== 'shoot' || unlocked.has(z.id);
-      if (playing && usable && d <= z.radius && d < best) {
+      if (jugando && usable && d <= z.radius && d < best) {
         best = d;
         active = z;
       }
     }
-    if (playing && active) {
+    if (jugando && active) {
       hud.setPrompt(`${coarse ? t('hint_interact_touch') : t('hint_interact')} · ${t(sectionKey(active.id))}`);
       if (input.consumeInteract()) openSection(active.id, true);
     } else {
@@ -2021,8 +3027,11 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
       const side = nearestSide();
       const shootZone = zoneFor(side);
       const near = Math.abs(pos.x - rimX(side)) <= SHOOT_RANGE && !!shootZone && !unlocked.has(shootZone.id);
-      hud.setPrompt(playing && near && ball.state === 'held' && !charging ? (coarse ? t('hint_shoot_touch') : t('hint_shoot')) : null);
+      hud.setPrompt(jugando && near && ball.state === 'held' && !charging ? (coarse ? t('hint_shoot_touch') : t('hint_shoot')) : null);
     }
+
+    // El aviso del carrito manda sobre el de la zona, que se acaba de pintar.
+    if (enElCarrito) hud.setPrompt(concurso.activo ? t('contest_quit') : t('contest_start'));
 
     // Redes del aro: la onda baja mientras haya algo que contar.
     NET.time.value = time;
@@ -2056,6 +3065,8 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
     // único que no se anima. El reportero gesticula con la otra mano por eso.
     set.reporter.armR.rotation.x = mode === 'interview' ? -1.45 : -1.15;
     set.tally.visible = mode === 'interview' || Math.floor(time * 1.5) % 2 === 0;
+    // Retransmisión: REC, canal y contador mientras el plató está en directo.
+    hud.setBroadcast(mode === 'interview', animTime);
     (set.onAir.material as THREE.MeshStandardMaterial).emissiveIntensity = mode === 'interview' ? 1.6 : 0.2;
 
     updateCamera(dt);
@@ -2245,10 +3256,14 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
   }
 
   const onVisibility = (): void => {
-    if (document.hidden) cancelAnimationFrame(raf);
-    else {
+    if (document.hidden) {
+      cancelAnimationFrame(raf);
+      // Se suelta el guarda para que al volver a la pestaña se pueda volver a
+      // pedir el bucle: si no, `pedirBucle()` lo tomaría por un bucle vivo.
+      bucleActivo = false;
+    } else {
       clock.getDelta();
-      raf = requestAnimationFrame(frame);
+      pedirBucle();
     }
   };
   document.addEventListener('visibilitychange', onVisibility);
@@ -2312,7 +3327,7 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
   function mergeStaticLots(cell = BATCH_CELL): void {
     const b = batchStaticMeshes(
       scene,
-      [courtGroup, hoopL, hoopR, benchProp, tunnelProp, scorerTable, set.group, scoreboard],
+      [courtGroup, hoopL, hoopR, benchProp, tunnelProp, scorerTable, set.group, scoreboard, carrito.group],
       {
         material: VOXEL_MATERIAL,
         cell,
@@ -2322,7 +3337,13 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
         // es justo lo que se quiere: son las únicas piezas de la canasta con
         // movimiento propio. Los cuatro que sí hay que excluir son los rigs, que
         // comparten material con el mundo y cambian de pose cada fotograma.
-        exclude: [player.root, ballMesh, set.reporter.root, set.operator.root],
+        // Y los carros del recorrido, que sí cambian: los cuatro puestos que
+        // aparecen nacen ocultos y se enseñan al convocar (`mostrarPuestos`), y sus
+        // balones se van gastando. El fundido no se puede esconder por partes y
+        // ADEMÁS remueve la malla de su grupo, así que un carro fundido ya no se
+        // podría apagar nunca: quedaría su copia congelada dentro del lote del
+        // mundo. (El carrito de la esquina no está aquí: ése no se esconde.)
+        exclude: [player.root, ballMesh, set.reporter.root, set.operator.root, ...carrito.balls, ...carros.map((c) => c.group)],
       },
     );
     if (b.merged === 0) return; // ya estaba fundido
@@ -3168,6 +4189,85 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
       ZONES,
       /** Repite el fundido de mallas estáticas (ya no encuentra nada después). */
       batch: mergeStaticLots,
+      /**
+       * Estado del MATE EN CARRERA (lote B).
+       *
+       * `ritmo` es la velocidad de entrada con la que se decide (ver
+       * `DUNK_RUN_MIN`), `t`/`altura` son la animación y `x/z/y` la posición real
+       * del jugador: con las cinco cifras se puede comprobar en vivo que el mate
+       * sólo sale corriendo, que el cuerpo llega al aro y que vuelve al suelo.
+       */
+      mate: () => ({
+        activo: dunk.activo,
+        t: +dunk.t.toFixed(3),
+        altura: +dunkY(dunk).toFixed(3),
+        ritmo: +ritmoBruto.toFixed(2),
+        lado: dunk.side,
+        x: +pos.x.toFixed(2),
+        z: +pos.z.toFixed(2),
+        y: +pos.y.toFixed(2),
+        sacudida: +shake.toFixed(3),
+      }),
+      /**
+       * Coloca al jugador donde se pida, o devuelve dónde está (sólo DEV).
+       *
+       * Con `freeze` no basta: un bloqueo de input se comprueba EMPEZANDO en un
+       * sitio concreto (a 5 m del aro, corriendo hacia él), y llegar hasta ahí a
+       * mano depende del encuadre, de las colisiones y de la suerte. Siendo un
+       * gancho de desarrollo no entra en el bundle.
+       */
+      jugador: (x?: number, z?: number) => {
+        if (typeof x === 'number' && typeof z === 'number') {
+          pos.set(x, 0, z);
+        }
+        return { x: +pos.x.toFixed(2), y: +pos.y.toFixed(2), z: +pos.z.toFixed(2) };
+      },
+      /**
+       * Estado del CONCURSO DE TRIPLES (lote B), para comprobarlo en vivo.
+       */
+      concurso: () => ({
+        activo: concurso.activo,
+        t: +concurso.t.toFixed(1),
+        puntos: concurso.puntos,
+        carro: concurso.carro,
+        balones: concurso.balones,
+        tiros: concurso.tiros,
+        aciertos: concurso.aciertos,
+        esperando: concurso.esperando,
+        reloj: concurso.reloj,
+        dinero: concurso.dinero,
+        mejor: mejorConcurso,
+        fin: concurso.fin,
+      }),
+      /**
+       * Estado del RECORRIDO del concurso (lote B): si está a la vista, cómo va la
+       * aparición y cuántos balones le quedan a cada carro, contados en el mundo
+       * (mallas visibles) y no en el estado. Es lo que permite comprobar en vivo
+       * que la pista arranca limpia, que los cuatro puestos aparecen al convocar y
+       * que se van al terminar (y que el carrito se recarga).
+       */
+      puestos: () => ({
+        carrito: carrito.group.visible,
+        carros: carros[0]!.group.visible,
+        aparicion: +puestosT.toFixed(2),
+        escala: +carros[0]!.group.scale.y.toFixed(2),
+        balones: puestos.map((p) => p.balls.filter((b) => b.visible).length),
+        anillos: ringsPuestos.filter((r) => r.visible).length,
+        manchas: marcasPuestos.filter((m) => m.visible).length,
+      }),
+      /** Convoca el concurso desde la consola (sólo DEV). */
+      convocar: () => {
+        convocarConcurso();
+        return true;
+      },
+      /** Balón: posición y estado, para no tener que adivinar dónde está. */
+      balon: () => ({
+        x: +ball.pos.x.toFixed(2),
+        y: +ball.pos.y.toFixed(2),
+        z: +ball.pos.z.toFixed(2),
+        estado: ball.state,
+        encestado: ball.scored,
+      }),
       /** Estado de la calidad adaptativa (escala, ventana de intervalos, coste). */
       calidad: () => ({
         escala: pixelRatio,
@@ -3378,16 +4478,55 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
     };
   }
   return {
+    /*
+     * CINEMÁTICA DE LA PUERTA DE IDIOMA.
+     *
+     * Hermano de `start()` con la misma carga útil y un objetivo distinto: deja la
+     * escena girando detrás del selector en vez de esperar a que elijes idioma.
+     *
+     * Lo que NO hace, y es lo importante:
+     *   · no desbloquea el audio (`sfx.unlock()`) — todavía nadie ha pedido sonido;
+     *   · no pone `mode` en `play`, así que `update()` se queda fuera del juego y
+     *     el input sigue apagado (`setMode` sólo lo habilita en `play`);
+     *   · no avisa de bienvenida, porque aún no se sabe en qué idioma.
+     *
+     * El reloj arranca aquí y NO se reinicia en `start()`: si arrancara dos
+     * veces, las animaciones que dependen de `clock.elapsedTime` darían un salto
+     * al entrar, y el salto se vería justo en el momento en que el jugador cree
+     * que el juego acaba de empezar.
+     */
+    beginAttract() {
+      setMode('attract');
+      updateCamera(0, true);
+      clock.start();
+      pedirBucle();
+    },
     start() {
+      /*
+       * Si la escena ya estaba girando en la cinemática, `start()` NO vuelve a
+       * arrancar el reloj: `clock.start()` pone el tiempo a cero y las animaciones
+       * darían un salto justo en la transición, que es el peor sitio posible.
+       * `updateCamera(0, true)` sí se repite: encuadra de golpe el plano de
+       * juego en vez de tener que esperar a que el lerp llegue.
+       */
+      /*
+       * El reloj NO se reinicia si ya venía corriendo: `clock.start()` pone el
+       * tiempo a cero y las animaciones darían un salto justo en la transición de
+       * la cinemática al juego, que es el peor sitio posible. Preguntamos al
+       * reloj en vez de suponer, para que entrar por `start()` sin haber pasado
+       * por `beginAttract()` siga arrancando el tiempo como antes.
+       */
       sfx.unlock();
       setMode('play');
       updateCamera(0, true);
       hud.toast(coarse ? t('welcome_touch') : t('welcome'), 6000);
-      clock.start();
-      raf = requestAnimationFrame(frame);
+      if (!clock.running) clock.start();
+      pedirBucle();
     },
     dispose() {
       cancelAnimationFrame(raf);
+      bucleActivo = false;
+      fireTrail.dispose();
       window.removeEventListener('resize', resize);
       document.removeEventListener('visibilitychange', onVisibility);
       input.dispose();

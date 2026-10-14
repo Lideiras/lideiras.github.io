@@ -8,6 +8,8 @@ import {
   holdPeso,
   mezclaPeso,
   poseCelebrate,
+  poseDunk,
+  poseLejano,
   poseShoot,
   recogePeso,
   regateAltura,
@@ -404,6 +406,118 @@ describe('regate: el brazo y el balón comparten fase', () => {
     // muestras sólo caen unos pocos puntos ahí, pero tienen que caer algunos.
     expect(vistoAbajo).toBeGreaterThan(2);
     expect(vistoArriba).toBeGreaterThan(2);
+  });
+});
+
+/* ===========================================================================
+ * GESTOS DE TIRO POR DISTANCIA Y CORTE (lote A, T4)
+ * ---------------------------------------------------------------------------
+ * El propietario pidió más animaciones: mate/entrada de cerca, gesto distinto
+ * de lejos y cambios de dirección bruscos. Las tres cosas son CAPAS DE POSE, o
+ * sea que tienen que cumplir el mismo contrato que `poseShoot` y
+ * `poseCelebrate`: mezclar con peso y no tocar nada con peso 0. Si una capa
+ * ASIGNARA, volvería el salto de brazo que ya se corrigió una vez.
+ * ========================================================================= */
+
+describe('gestos por distancia: mate y tiro lejano', () => {
+  it('poseDunk con peso 0 no toca ningún hueso', () => {
+    const rig = buildHuman(OPTS);
+    animateHuman(rig, 1.3, 0.5, true);
+    const antes = {
+      l: rig.armL.rotation.x,
+      r: rig.armR.rotation.x,
+      legL: rig.legL.rotation.x,
+      lean: rig.lean.rotation.x,
+      torso: rig.torso.rotation.x,
+    };
+    poseDunk(rig, 0);
+    expect(rig.armL.rotation.x).toBe(antes.l);
+    expect(rig.armR.rotation.x).toBe(antes.r);
+    expect(rig.legL.rotation.x).toBe(antes.legL);
+    expect(rig.lean.rotation.x).toBe(antes.lean);
+    expect(rig.torso.rotation.x).toBe(antes.torso);
+  });
+
+  it('poseLejano con peso 0 no toca ningún hueso', () => {
+    const rig = buildHuman(OPTS);
+    animateHuman(rig, 1.3, 0.5, true);
+    const antes = {
+      l: rig.armL.rotation.x,
+      r: rig.armR.rotation.x,
+      legR: rig.legR.rotation.x,
+      torso: rig.torso.rotation.x,
+    };
+    poseLejano(rig, 0);
+    expect(rig.armL.rotation.x).toBe(antes.l);
+    expect(rig.armR.rotation.x).toBe(antes.r);
+    expect(rig.legR.rotation.x).toBe(antes.legR);
+    expect(rig.torso.rotation.x).toBe(antes.torso);
+  });
+
+  it('los tres gestos con peso 1 son DISTINTOS entre sí', () => {
+    // Es el objetivo del cambio: si los tres acabaran en la misma pose, el
+    // jugador no notaría ninguna diferencia entre tirar y machacar.
+    const pose = (capa: (rig: ReturnType<typeof buildHuman>, k: number) => void): number[] => {
+      const rig = buildHuman(OPTS);
+      animateHuman(rig, 1.3, 0, true);
+      capa(rig, 1);
+      return [rig.armL.rotation.x, rig.armR.rotation.x, rig.legL.rotation.x, rig.torso.rotation.x];
+    };
+    const tiro = pose(poseShoot);
+    const mate = pose(poseDunk);
+    const lejano = pose(poseLejano);
+    for (let i = 0; i < tiro.length; i++) {
+      expect(mate[i]).not.toBeCloseTo(tiro[i]!, 2);
+      expect(lejano[i]).not.toBeCloseTo(tiro[i]!, 2);
+    }
+    // Y el mate sube los DOS brazos: es lo que lo distingue de un tiro.
+    const rig = buildHuman(OPTS);
+    animateHuman(rig, 1.3, 0, true);
+    poseDunk(rig, 1);
+    expect(rig.armL.rotation.x).toBeLessThan(-2);
+    expect(rig.armR.rotation.x).toBeLessThan(-2);
+    // Y el tiro lejano deja el brazo de contrapeso abajo, no arriba.
+    const rig2 = buildHuman(OPTS);
+    animateHuman(rig2, 1.3, 0, true);
+    poseLejano(rig2, 1);
+    expect(rig2.armR.rotation.x).toBeGreaterThan(-1);
+  });
+});
+
+describe('corte: el cuerpo se inclina hacia dentro del giro', () => {
+  it('sin corte no hay inclinación lateral ni se queda residuo', () => {
+    const rig = buildHuman(OPTS);
+    animateHuman(rig, 1.3, 0.5, true, true, 0, { corte: 0, corteDir: 1 });
+    expect(rig.lean.rotation.z).toBe(0);
+    // Y después de un corte, el siguiente fotograma la devuelve a cero: si no,
+    // el personaje se quedaría torcido para siempre.
+    animateHuman(rig, 1.3, 0.5, true, true, 0, { corte: 1, corteDir: 1 });
+    expect(rig.lean.rotation.z).toBeGreaterThan(0.3);
+    animateHuman(rig, 1.3, 0.5, true, true, 0, { corte: 0, corteDir: 1 });
+    expect(rig.lean.rotation.z).toBe(0);
+  });
+
+  it('la inclinación va hacia el lado del giro, no siempre al mismo', () => {
+    const rig = buildHuman(OPTS);
+    animateHuman(rig, 1.3, 0.5, true, true, 0, { corte: 1, corteDir: 1 });
+    const izq = rig.lean.rotation.z;
+    animateHuman(rig, 1.3, 0.5, true, true, 0, { corte: 1, corteDir: -1 });
+    const der = rig.lean.rotation.z;
+    expect(izq).toBeGreaterThan(0);
+    expect(der).toBeLessThan(0);
+    expect(izq).toBeCloseTo(-der, 6);
+  });
+
+  it('el corte NO toca las piernas ni inclina hacia delante', () => {
+    // La inclinación va sobre la Z local del pivote: las piernas se quedan
+    // verticales y el `lean` hacia delante de la carrera no se altera.
+    const limpio = buildHuman(OPTS);
+    animateHuman(limpio, 1.3, 0.5, true, true, 0, { corte: 0 });
+    const brusco = buildHuman(OPTS);
+    animateHuman(brusco, 1.3, 0.5, true, true, 0, { corte: 1, corteDir: 1 });
+    expect(brusco.legL.rotation.x).toBeCloseTo(limpio.legL.rotation.x, 6);
+    expect(brusco.legR.rotation.x).toBeCloseTo(limpio.legR.rotation.x, 6);
+    expect(brusco.lean.rotation.x).toBeCloseTo(limpio.lean.rotation.x, 6);
   });
 });
 

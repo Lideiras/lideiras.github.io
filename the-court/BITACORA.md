@@ -926,3 +926,481 @@ y no hay errores en consola.
   (una valla, una torre), hay que refundir esa parte; el camino fácil hoy es reconstruir.
 * Lo medido es coste de CPU/llamadas, **no FPS**: el bucle del panel sigue clavado a 30 fps por
   el compositor, así que la ganancia de tiempo no se puede certificar aquí.
+
+---
+
+## 3m. Lote A (T3 y T4): medidor Takeover con estela de fuego y gestos de tiro por distancia
+
+Del plan `PLAN-LOTE-A.md`. T1 (selector cinemático) y T2 (pelo con volumen) ya estaban en el
+árbol; esta sesión entrega **T3 y T4**.
+
+### T3 — Takeover
+
+* **Constante compartida** `TAKEOVER_HITS = 5` en `config.ts`: la usan el juego (cuándo se enciende)
+  y el HUD (cuántas muescas dibuja). Con dos copias, el medidor diría cinco y el fuego se
+  encendería en la sexta.
+* **Racha propia** (`hitStreak`), separada de `missStreak`: aquélla cuenta FALLOS y alimenta la
+  asistencia del tiro; reutilizarla habría cambiado la dificultad del juego.
+* **`src/game/fireTrail.ts`** (nuevo): `THREE.Points` de 28 puntos con mezcla aditiva, búfer
+  circular y **sin sombras** (el mapa se hornea una vez: una llama que proyectara dejaría una
+  copia congelada). Sólo muestrea por encima de 1,2 m/s, así que con el balón parado en la mano no
+  dibuja nada — no se convierte en un foco pegado al jugador.
+* **Medidor en el HUD** arriba en el centro: es el único hueco que no pisa al medidor de tiro
+  (`bottom: 14%`) ni al récord (esquina inferior derecha) ni al joystick en móvil.
+* **Un solo sitio cuenta el fallo** (`fallarTiro()`), y ahí está el arreglo de verdad: ver abajo.
+
+### T4 — Gestos por distancia + corte
+
+* El gesto se elige **al soltar**, donde `distAro` ya está calculado: `DUNK_RANGE = 2,9 m` → mate,
+  `LONG_RANGE = 7,5 m` → tiro largo, en medio el de siempre. **La física no se toca**: la parábola
+  sigue saliendo de `solveShot` desde el mismo `y` de 2,15 m.
+* `poseDunk` y `poseLejano` son **capas nuevas que mezclan** (como `poseShoot` y `poseCelebrate`),
+  nunca asignan: con peso 0 no tocan un hueso.
+* El **corte** (cambio de dirección brusco) reutiliza la señal que ya existía —el cambio de mano a
+  más de `HAND_SWITCH_ANGLE` de giro en la ruta— y le cuelga una inclinación lateral de hasta 0,35
+  rad sobre la Z local del tronco. Un evento, dos lecturas: la cabeza mira y el cuerpo se inclina.
+
+### Los dos fallos que encontró la prueba en vivo (y que no se ven en el código)
+
+1. **El aviso del Takeover lo pisaba el «¡Canasta!»** en el MISMO fotograma (es el mismo elemento
+   del DOM). Se veía perfectamente en vivo: el medidor se encendía con 5 muescas y el aviso no
+   aparecía nunca. Arreglado anunciándolo **el último** de `onScore`.
+2. **Un tiro fallado que se recoge con la mano NO contaba como fallo.** La racha (y la asistencia)
+   sólo se enteraban de los balones que se paraban solos en la pista, y en este juego el rebote
+   casi siempre vuelve hacia el jugador: el fuego podía quedarse encendido toda la partida.
+   Evidencia: balón a 0,78 m **en la mano** con el Takeover encendido y el marcador en 15/19. Se
+   arregló con `fallarTiro()` llamado desde las dos ramas (recogida y balón parado), juzgando por
+   `ball.scored` — un balón recogido después de ENTRAR no es un fallo.
+3. De paso, al apagarse quedaban puestas las clases `takeover--on` y las 5 muescas: el DOM decía
+   «encendido» con el fuego apagado. Se limpian al esconder el medidor.
+
+### Medido en vivo (no deducido)
+
+| Qué | Cómo se midió | Resultado |
+|---|---|---|
+| Takeover a las 5 seguidas | 5 tiros perfectos scriptados sobre la interfaz real | `pips: 5`, `takeover--on`, aviso **«¡TAKEOVER! El balón está en llamas»** |
+| Estela encendida | `Points` de la escena, balón en vuelo | `visible: true`, color máximo **0,93** (muestra a 3,98 m de altura) |
+| Se apaga al fallar | tiro malo a propósito | medidor oculto, **0 muescas**, aviso «Se apagó el fuego», `Points.visible = false` |
+| Fallo por recogida | tiro malo + caminar hasta el balón **en el aire** (0,78 m, 0,54 m de distancia) | torso a **+0,14** en el instante de la recogida: `fallarTiro()` corre en esa rama |
+| Gesto de mate | jugador a **2,0 m** del aro, lectura del rig en la carga | `armL = -2,35` — el valor exacto de `poseDunk` |
+
+Aviso para la próxima sesión: la prueba en vivo **necesita el panel del navegador compositando**. Con
+la pestaña reportada como visible pero sin compositor, `requestAnimationFrame` da 0 fotogramas y el
+bucle del juego se queda congelado (el DOM miente: `document.hidden` era `false` y aun así no había
+fotogramas). Se detecta con una sonda de `requestAnimationFrame` antes de dar por bueno cualquier
+estado leído de la escena.
+
+### Estado
+
+`npx tsc --noEmit` 0 errores · `npm test` **112/112** en 8 ficheros (+6 de gestos y corte en
+`human.test.ts`, +8 nuevos en `tests/fireTrail.test.ts`) · `npm run build` ✓ · `main.js`
+**692,19 kB / 193,11 kB gzip**.
+
+### Pendiente del lote
+
+* El gesto de **tiro largo** está cubierto por los tests (la pose es distinta y mezcla), pero no se
+  disparó en vivo: el jugador ya estaba a 2 m cuando se probó. Es un ternario simétrico; si se
+  quiere certificar, se camina a más de 7,5 m y se lee `armL ≈ -1,72`.
+* **Lote B** (fuera de este lote, ya acordado): la entrevista como diálogo de cámara de TV y el
+  carrito de balones con el concurso de triples, que el propietario activará expresamente.
+
+---
+
+## 3n. Lote B: mate en carrera, entrevista en directo, takeover y concurso de triples
+
+Cuatro entregas del propietario y, al final, un ajuste suyo sobre el concurso. Todo lo de esta
+sección está **medido en vivo** con el panel del navegador, no deducido del código: las cifras de
+la tabla de abajo son lecturas de los ganchos `__court.*` sobre la partida de verdad.
+
+### 1. Mate en carrera (`src/game/dunk.ts`)
+
+* Módulo puro (con `tests/dunk.test.ts`): `DUNK_VUELO` 0,34 s de carrera + `DUNK_CAIDA` 0,34 s
+  colgado del aro = 0,68 s, y una altura de `DUNK_ALTURA` 0,72 m justo en el golpe.
+* **Hacen falta las DOS condiciones** (`puedeMate`): estar a `DUNK_RANGE` (2,9 m) **y** llegar a
+  `DUNK_RUN_MIN` (0,55 de la velocidad máxima). Quieto, o andando, esto NO se activa y el tiro de
+  cerca se resuelve como siempre — que es exactamente lo que el propietario dijo que estaba bien.
+* **El input se bloquea mientras dura** (`playing && !dunk.activo` deja fuera movimiento, carga y
+  regate): la posición la manda la animación y las piernas siguen moviéndose, que es lo que hace
+  que se lea como carrera y no como deslizamiento. El bloque va ANTES de la rama de juego para que
+  no haya dos caminos de movimiento en el mismo fotograma.
+* **`ritmoBruto` se lee antes de cargar**, no al soltar: el bloque de movimiento no corre durante
+  la carga, así que al soltar el mate juzga la velocidad a la que VENÍAS al pulsar espacio.
+* **La cámara vibra en el instante del golpe**, no al empezar: `machacar()` (el fotograma en que
+  vence `DUNK_VUELO`) llama a `sacudir(SHAKE_DUNK_TIME = 0,3 s, SHAKE_DUNK_AMP = 0,055 m)` y a
+  `bumpNet(1)`. La sacudida es un offset de cámara que decae con el tiempo, y se respeta
+  `prefers-reduced-motion`.
+* **El balón no se lanza: se METE.** En el golpe aparece justo encima del aro y cae, así que el
+  tanto lo canta la MISMA física que cualquier tiro (`onScore`), con su racha de takeover, su
+  récord y su desbloqueo de zona. Nada de `made++` a mano.
+
+### 2. Takeover (medidor de racha + estela)
+
+* `TAKEOVER_HITS = 5` en `config.ts`, compartido por el juego (cuándo se enciende) y el HUD
+  (cuántas muescas dibuja): con dos copias, el medidor diría cinco y el fuego se encendería en la
+  sexta.
+* Racha propia (`hitStreak`), separada de `missStreak` (que cuenta fallos y alimenta la asistencia
+  del tiro): reutilizarla habría cambiado la dificultad del juego. Se apaga **al fallar**, no por
+  tiempo, y `fallarTiro()` es el ÚNICO sitio que cuenta un fallo (vale para los dos caminos: balón
+  que se para en la pista y balón que el jugador recoge, juzgando por `ball.scored`).
+* `src/game/fireTrail.ts`: `THREE.Points` de 28 puntos, búfer circular, mezcla aditiva y sin
+  sombras. Sólo muestrea por encima de **1,2 m/s**, así que con el balón en la mano no dibuja nada
+  (no se convierte en un foco pegado al jugador) y en vuelo va lleno: medido 28/28 puntos vivos.
+* Medidor arriba en el centro del HUD: es el único hueco que no pisa el medidor de tiro, el récord
+  ni el joystick. Con la racha a 0 se esconde y limpia sus clases (si no, el DOM decía «encendido»
+  con el fuego apagado).
+
+### 3. La entrevista: diálogo + plano de la cámara de televisión
+
+* El formulario ya no es lo primero. `renderInterview()` (en `ui/panels.ts`) monta un **diálogo de
+tres preguntas** con dos respuestas cada una y su réplica, con el guion como DATOS (`GUION`) y no
+como una cascada de `if`: añadir una pregunta es añadir un objeto, y cada línea es una clave de
+traducción (una traducción que falte rompe el build).
+* Al final aparece **el mismo formulario de siempre** (misma validación, mismo honeypot, mismo
+límite de un mensaje por minuto) y el foco va al primer campo. El botón «ir directo al formulario»
+existe para quien sólo quiere dejar sus datos, y se esconde en cuanto el formulario está a la vista.
+* La conversación se escribe con nodos y `textContent` (nada de `innerHTML` con texto del guion) y el
+registro es `role="log"` + `aria-live="polite"`: cada intervención se anuncia sola.
+* **El plano es el POV de la cámara de TV del plató** (`INTERVIEW` en `config.ts`): el punto de vista
+se separa del barril de la cámara hacia el lado de las gradas para ver al entrevistado sin que el
+aparato se meta en el plano. Medido en vivo: cámara en (11, 1,67, 10,01) mirando al jugador en
+(9, 8,3).
+* El **filtro de televisión** está hecho con DOM y no con un `filter` CSS sobre el lienzo: un filtro a
+pantalla completa obliga al compositor a reprocesar los 828 × 1.033 px en cada fotograma, y esto
+tiene que seguir yendo fino en una GPU integrada de 2013. Son líneas de TV (`.tvfx`, un
+`repeating-linear-gradient`), la barra de emisión con **REC parpadeante** (`rec-blink`, 0,8 s), el
+canal, el **timecode a 25 fps** (se reescribe sólo cuando cambia el cuadro que se enseña) y el
+rotulito EN DIRECTO. El cartel ON AIR del plató sube de intensidad y los dos actores se animan más
+cuando el plató está en directo (`mode === 'interview'`).
+
+### 4. El concurso de triples (y el carrito)
+
+* `src/game/contest.ts` es SÓLO estado y reglas, con `tests/contest.test.ts`: reloj de 60 s, cinco
+carros con tres balones, bola del dinero (la última de cada carro) que vale doble, y el carro que
+sólo avanza **si el jugador está EN el siguiente** y el actual está vacío (correr de una esquina a
+la otra es la mitad de la gracia, así que no avanza solo). La puntuación se decide con el `dinero`
+que se marcó **al coger** el balón, no al resolver: si se mirara al resolver, un balón en vuelo
+mientras el jugador ya anda hacia el carro siguiente cargaría los puntos al carro equivocado.
+* **El reloj arranca con el PRIMER TIRO**, no al convocar: si arrancara con la E, el jugador pagaría
+el tiempo que tarda en colocarse (y en un carro a 1,2 m del carrito, eso son dos segundos de quince
+tiros). También se PARA cuando se abre una sección: leer un panel mientras corre el reloj no es
+tensión, es una pérdida.
+* El carrito de la esquina (`CARRITO`) convoca con **E**, y su aviso manda sobre el de la zona (el
+bloque de zonas termina siempre con un `consumeInteract()` que se comería la tecla).
+
+#### Ajuste posterior del propietario (esta sesión): un solo carrito
+
+* **En la pista hay UN carrito**, el de la esquina. Los cinco puestos del recorrido se construyen al
+arrancar pero **nacen ocultos**, y aparecen al convocar el concurso. La cancha se queda limpia
+para el baloncesto normal: se van también los cinco anillos naranjas permanentes que había antes.
+* `mostrarPuestos(on)` enciende y apaga **los tres elementos de cada puesto a la vez** —carro,
+anillo y mancha— porque por separado uno se queda descolgado (un anillo de puesto sin carro, o al
+revés). Los carros vuelven LLENOS: lo gastado en la partida anterior no se recuerda.
+* **Posiciones** (las que pidió el propietario: esquinas, diagonales y central): esquina del
+carrito (rx − 0,32, 6,9) y la esquina contraria (rx − 2,4, −6,6), diagonales a 45°
+(rx − 4,77, ±4,77) y central (rx − 6,9, 0), todas por fuera de la línea de tres. La esquina del
+lado contrario se mete 2,4 m hacia la pista para que quepan el carro y el jugador sin pisar el
+borde del parqué.
+* **Aparecen creciendo del parqué**, no de golpe: escala en Y de 0,02 a 1 en `PUESTOS_APARICION`
+(0,28 s, ease-out) animada en `update()`. Un carro que sale de la nada se lee como un fallo de
+carga; uno que crece se lee como que lo acaban de poner. Con `prefers-reduced-motion` se salta al
+final (la animación no hace falta para jugar). Se escala SÓLO en Y porque la base del carro está en
+el suelo: crece hacia arriba, no se hincha.
+* **Los carros NO entran en el fundido de mallas estáticas**, y no es un detalle de rendimiento:
+`batch.ts` **remueve la malla de su grupo** al fundirla, así que un carro fundido no se podría
+esconder NUNCA —quedaría su copia congelada dentro del lote del mundo—. Y van **sin sombra
+horneada** (`noCastShadow`): su sombra se habría quedado sola en el parqué al esconder el carro.
+Llevan una **mancha radial** (`blob`), que es la misma técnica que usan el jugador y el balón (el
+mapa de sombras se cuece una vez, así que un objeto que aparece y desaparece no puede proyectar).
+* **Los balones del carro se gastan en el mundo**, no sólo en el HUD: se descuenta el que se está
+tirando (`esperando`), los carros de atrás quedan vacíos y los de delante, llenos. La cuenta del
+HUD («●●○») se ve ahora en la bandeja, así que se sabe cuántos quedan sin mirar arriba.* Gancho nuevo de desarrollo: **`__court.puestos()`** devuelve visibilidad (del carrito y de los
+  carros que aparecen), progreso de la aparición, escala, balones por puesto (contados en las
+  mallas, no en el estado), anillos y manchas. Es lo que permite comprobar en vivo que la pista
+  arranca limpia, que los puestos aparecen y que se van al terminar.
+
+#### Segundo ajuste del propietario (esta sesión): el carrito ES el primer carro
+
+* «El carro donde interactúa el usuario debería ser el primer carro de balones a lanzar»: el
+  carrito de la esquina pasa a ser **`TRIPLES[0]`**, así que se llega, se pulsa E y se tira desde
+  ahí mismo, sin el carro de adorno que había al lado (y sin la vuelta de metro y medio que había
+  que dar para empezar). Sigue siendo un triple: 6,91 m del aro, por fuera de los 6,75 de la línea.
+* El recorrido queda **esquina (el carrito) → diagonal → central → diagonal → la otra esquina**, o
+  sea las posiciones que pidió el propietario. `CARRITO` se declara ANTES de `TRIPLES` en
+  `config.ts` porque ahora lo usa (un `const` usado antes de declararse revienta el módulo al
+  cargarlo).
+* **Los cinco puestos se unifican en una sola lista de mallas** (`puestos = [carrito, ...carros]`) en
+  el MISMO orden que `TRIPLES`, porque `concurso.carro` es un índice de esa tabla: con las dos
+  listas desordenadas, `sincronizarBalones()` habría vaciado el carro de al lado. El carrito se
+  distingue sólo en dos cosas: está siempre a la vista (no lo toca `mostrarPuestos()`) y entra en el
+  fundido de mallas y en el mapa de sombras como cualquier atrezo, porque nunca se esconde.
+* `balonesVisibles(i)` es ahora la única fuente de la cuenta, y devuelve **tres balones al carrito
+  aunque no haya concurso** (es de donde se coge el balón para jugar al baloncesto normal), cero a
+  los puestos de atrás y tres a los de delante.
+* **El balón se va de la bandeja tanto si se encesta como si se falla**, y no vuelve: la bajada la
+  decide el estado, y ese descuento lo hace `resolverTiro()` en los DOS desenlaces —`onScore()`
+  para la canasta, `fallarTiro()` para el fallo—, así que la bandeja sólo puede bajar. Verificado
+  con los tres desenlaces seguidos: dos aciertos y un fallo, con los balones del carrito bajando
+  3→2→1→0 (lo medido en vivo está abajo).
+
+#### Medido en vivo (segundo ajuste)
+
+| Qué | Cómo se midió | Resultado |
+|---|---|---|
+| Pista limpia al arrancar | `__court.puestos()` nada más entrar a jugar | `carrito: true`, `carros: false`, balones `[3,0,0,0,0]` (el carrito lleno para jugar) |
+| El carro que toca es el carrito | E en el carrito y `concurso.carro` | `carro: 0` con el jugador de pie en el carrito; 4 anillos y 4 manchas apareciendo |
+| El balón se coge del carrito | carrito con 3 + balón en la mano | bandeja del carrito a 2 y los otros cuatro a 3: `[2,3,3,3,3]` |
+| Encestar lo gasta | dos tiros metidos seguidos | `balones` 3→2→1 y bandeja `[2,…]`→`[1,…]`→`[0,…]`, puntos 0→1→2 |
+| Fallar también lo gasta | tercer tiro con carga de 70 ms (fallo) | `balones` 1→0, bandeja `[0,…]` y el balón NO vuelve (puntos sin cambiar) |
+| Cambio de puesto | andar a la diagonal con el carrito vacío | `carro: 1`, «Carro 2/5 ●●●» y la bandeja `[0,3,3,3,3]` |
+| Se va al dejarlo | E en el carrito con el concurso en marcha | concurso cerrado, 0 anillos, 0 manchas y el carrito RECARGADO `[3,0,0,0,0]` |
+
+### El fallo que encontró la prueba en vivo (y que el código no enseñaba)
+
+En el fotograma en que **se agota el reloj**, `terminarConcurso()` esconde el recorrido (balones
+incluidos) y el sincronizado de balones —que va DETRÁS en el mismo bloque— volvía a encender los
+quince con el estado del concurso ya terminado. En pantalla no se veía nada raro (el grupo estaba
+oculto), pero el mundo se quedaba diciendo que había 12 balones a la vista que no existían: la
+lectura en vivo era `__court.puestos().balones = [1,3,3,3,3]` con `fin: 'tiempo'` y los cinco
+carros ocultos. Arreglado con la guarda `if (concurso.activo)` alrededor del sincronizado, y
+**verificado agotando el reloj de verdad** (60 s de reloj, no un atajo): tras el final, `visible:
+false`, 0 anillos, 0 manchas y `balones [0,0,0,0,0]`.
+
+### Medido en vivo (no deducido)
+
+| Qué | Cómo se midió | Resultado |
+|---|---|---|
+| Pista limpia al arrancar | `__court.puestos()` nada más entrar a jugar | `visible: false`, 0 anillos, 0 manchas, balones `[0,0,0,0,0]` |
+| Aparecen al convocar | E en el carrito, muestreo cada 110 ms | `t` 0,24 → 0,71 → 1 con escala 0,42 → 0,92 → 1 · 5 anillos · 5 manchas |
+| Balones por carro | tras el primer tiro del concurso | `[2,3,3,3,3]`: el que tiene en la mano no está en la bandeja |
+| Se van al terminar | reloj agotado de verdad | `fin: 'tiempo'`, `visible: false`, 0 anillos, `[0,0,0,0,0]` |
+| Mate en carrera | corriendo hacia el aro (ritmo 1) y espacio a 2 m | `activo` 0,68 s, altura 0,72 m y `sacudida` con el pico en el golpe (0,116 s restantes) |
+| Mate quieto | de pie a 2,4 m del aro + espacio | `activo: false` y el tiro se resuelve como siempre |
+| Input bloqueado | movimiento en sentido contrario durante la animación | la posición no responde al teclado (la manda la animación) |
+| Takeover | 5 canastas seguidas | `takeover--on` con las 5 muescas encendidas |
+| Se apaga al fallar | tiro malo a propósito desde 12 m | medidor oculto y **0 muescas** |
+| Estela de fuego | `Points` de la escena con el balón en vuelo | 28/28 puntos vivos, `visible: true` |
+| Entrevista | `openSection('contact')` | modo `interview`, HUD «REC CANAL 3 · DEPORTES 07:30:20 EN DIRECTO», opacidad del REC 1→0,5→0→0→0,5→1, diálogo avanzando con las respuestas elegidas y el formulario al final con el foco en `name` |
+
+### Estado
+
+`npx tsc --noEmit` 0 errores · `npm test` **139/139** en 10 ficheros (`contest`, `dunk` y
+`fireTrail` nuevos, más el del carrito como primer carro) · `npx vite build` ✓ · `main`
+**703,68 kB / 196,88 kB gzip**.
+
+### Pendiente y observado (para no volver a descubrirlo)
+
+* **Un tiro soltado antes del final del reloj NO se cuenta.** Medido en vivo: balón en el aire
+  cuando `t` llegó a 0, entró, y el marcador se quedó en `tiros: 2` — `resolverTiro` sólo corre con
+  el concurso activo. Es el diseño anterior del minijuego, pero en un concurso de verdad la bola
+  que sale antes de la bocina vale; si el propietario lo quiere tipo NBA, hay que dejar resolver el
+  balón en vuelo después del final.
+* **Un tiro muy fallado puede salir de la cancha** (visto en vuelo hasta x = −23 con el parqué a
+  ±16): el modelo de error de `applyShotError` no tiene tope para el peor caso. Se vio con una
+  carga de 40 ms desde 12 m, o sea el peor tiro posible; no se ha tocado.
+* Los carros del recorrido no proyectan sombra (mancha radial en su lugar): es la decisión
+  consciente que evita rehornear el mapa de sombras al aparecer y al desaparecer, que costaba
+  ~7,8 ms por rehorno medidos con el renderizador de software del panel.
+* Queda por probar en vivo el **gesto de tiro largo** (más de 7,5 m) con el mate en carrera ya
+  dentro: la pose está cubierta por tests, pero no se disparó en la sesión.
+## 3o. El «hay que tirar dos veces»: el balón que devuelve el reboteador
+
+Lo reportó el propietario así: **«al pasar a un carro nuevo y hacer el primer tiro, el balón no sale
+y tengo que volver a tirar para que cuente el tiro»**. El síntoma se veía sobre todo al estrenar
+carro porque es ahí donde el jugador llega con un balón en las manos que el concurso no reconoce.
+
+### La causa: una invariante rota por dos sitios
+
+Durante el concurso hay una sola regla que lo ata todo: **si el jugador tiene un balón en las manos,
+ese balón está EN JUEGO** (`concurso.esperando`). De ella dependen las tres cosas que se
+desincronizaron:
+
+* `resolverTiro()` —el tiro que entra y el que falla, los dos— deja `esperando = false` en el mismo
+  fotograma en que `darBalonAlJugador()` devuelve el balón a las manos: el jugador se quedaba con un
+  balón del carro que el juego no reconocía como suyo.
+* La recogida sólo se intentaba `if (ball.state !== 'held')`, así que nadie volvía a marcar el balón
+  que ya estaba en la mano. La invariante se rompía en CADA tiro resuelto, y con ella el carro se
+  podía quedar con un balón «de nadie» en las manos.
+* Al lanzar ese balón, `puedeCoger()` (que sólo mira `esperando`) decía que sí y disparaba una
+  **segunda recogida en el mismo fotograma**: el balón salía y volvía a la mano. Desde fuera, «el
+  tiro no ha salido», y el intento no contaba hasta volver a pulsar.
+
+Y el caso concreto que veía el jugador: al vaciar un carro, el último balón se queda en las manos
+(con `esperando` en false, porque el carro ya no tiene balones que marcar) y se lleva andando al
+carro siguiente. Allí, el primer tiro era justo el que disparaba la recogida fantasma.
+
+### El arreglo, en tres piezas
+
+1. **El balón que devuelve el reboteador se marca como en juego** mientras al carro le queden
+   balones: `if (concurso.activo && concurso.balones > 0) tomarBalon(concurso)`, inmediatamente
+   después de devolverlo a las manos. De paso, `tomarBalon` vuelve a marcar la **bola del dinero**
+   con la cuenta ya descontada, que es cuando toca (el balón que el jugador tiene es el que le
+   queda al carro).
+2. **La recogida ya no depende de `ball.state`**: se intenta siempre que `puedeCoger()` lo permita
+   —y `puedeCoger` significa exactamente «no hay balón en juego y estoy en el carro que toca»—, y
+   `cogerBalonDelPuesto()` cubre los dos casos: si el jugador **traía** un balón, ése se deja (se
+   reancla a la bandeja y sube a las manos con la transición de siempre, así se VE llegar el del
+   carro); si no lo traía, el balón que está por ahí sube a las manos. Es la misma regla que ya
+   servía para el arranque del concurso, sin una segunda.
+3. **Regla explícita y testeable: `puedeTirar(c)` en `contest.ts`** (`!c.activo || c.esperando`).
+   Durante el concurso sólo se tira con un balón en juego. Sin ella quedaba el otro lado del mismo
+   agujero: con el último balón de un carro ya vacío se podían encadenar tiros «de regalo» que no
+   gastaban balón ni contaban intento —y sumaban puntos si entraban—. Fuera del concurso siempre es
+   verdad, que es lo que deja seguir jugando al baloncesto normal al terminar.
+
+### Medido en vivo (con el código final)
+
+| Qué | Cómo se midió | Resultado |
+|---|---|---|
+| Al convocar, el balón de la pista se deja | E en el carrito con el balón de juego en la mano | el balón salta de la mano a la bandeja del carrito (y 0,02 → 0,78 en 0,3 s) y sube a las manos: bandeja `[2,3,3,3,3]`, `esperando: true` |
+| Tres tiros seguidos en el mismo carro | tres pulsaciones de espacio con muestreo cada 40 ms | los TRES salen (1.560 / 1.920 / 2.760 ms de vuelo, hasta `y = 4,4`): `tiros` 0→1→2→3 y bandeja 3→2→1→0 |
+| Al vaciar el carro queda el balón en la mano | tras el tercer tiro resuelto | `balones: 0`, `esperando: false`, ball `held` en las manos y bandeja `[0,3,3,3,3]` |
+| **El caso reportado** | andar al carro siguiente con ese balón y tirar | `carro: 1`, el balón aparece en la bandeja nueva y sube a las manos, bandeja `[0,2,3,3,3]` · **el primer tiro SALE** (1.640 ms, `y` hasta 4,56) y cuenta: `tiros` 3→4, bandeja 3→2 |
+| Al terminar, el balón normal vuelve | reloj agotado de verdad (60 s) | `fin: 'tiempo'`, ball `held` en las manos, 0 anillos, 0 manchas, carrito recargado `[3,0,0,0,0]` |
+| Y se sigue jugando | un tiro más con el concurso cerrado | sale (3.680 ms de vuelo) sin tocar la cuenta del carro |
+
+### Estado
+
+`npx tsc --noEmit` 0 errores · `npm test` **142/142** en 10 ficheros (3 nuevos: `puedeTirar` fuera
+del concurso, dentro del concurso y el marcado del balón que devuelve el reboteador) · `npx vite
+build` ✓ · `main` **704,06 kB / 197,04 kB gzip**.
+
+### Anotado durante la prueba
+
+* Con la pestaña OCULTA no hay fotogramas (`requestAnimationFrame` se para) y la medida en vivo da
+  falsos negativos: el reloj se queda clavado y el balón no sube a las manos. Las tablas de arriba
+  son con la pestaña a la vista (`document.visibilityState === 'visible'` y el contador de
+  fotogramas avanzando).
+* Se confirma el pendiente ya anotado en §3n: **un tiro muy fallado puede salir de la cancha** (esta
+  vez hasta x = 19,5 con el parqué a ±16). No se ha tocado.
+## 3p. El tiro sobre la bocina
+
+Petición del propietario: «deja que un tiro lanzado antes de que se agote el reloj del concurso de
+triples se resuelva y cuente, como en el concurso real». Era el primero de los pendientes anotados en
+§3n, y estaba medido: un tiro que entraba con el reloj ya a 0 no contaba, porque `resolverTiro` sólo
+corre con el concurso activo y el final lo cerraba todo en el mismo fotograma.
+
+### El mecanismo: la bocina es una ESPERA, no un estado aparte
+
+* `avanzarReloj` sigue igual —marca `fin: 'tiempo'` y deja el reloj a 0—, pero **ya no cierra nada**.
+  En el bucle, lo único nuevo es
+  `if (enBocina(concurso) && ball.state !== 'flying') terminarConcurso('tiempo')`: el concurso se
+  queda `activo` mientras el balón esté VOLANDO y se cierra en el fotograma en que deja de volar, con
+  el tiro ya resuelto y sumado.
+* Se mira **`ball.state`** y no `esperando` a propósito: un balón en las MANOS con el tiempo agotado
+  —el que el jugador no llegó a soltar— no vale nada, y con `esperando` el concurso se habría quedado
+  abierto para siempre esperando un tiro que nunca salió.
+* El cierre va **antes** del bloque de juego, y no es un detalle de estilo: si el último carro se
+  quedó vacío, el `terminarConcurso('carros')` de más abajo cerraría la partida «por balones» cuando
+  lo que ha sonado es la bocina.
+* Durante la espera no se puede estirar la partida, y eso son tres reglas del estado (con test):
+  **`puedeTirar`** exige `fin !== 'tiempo'` (ni un lanzamiento más), **`puedeCoger`** también (ni un
+  balón más) y **`avanzarCarro`** devuelve `false` (ni cambio de carro). Lo único que puede pasar es
+  que aterrice el balón que ya iba por el aire.
+* Quien suma el tanto sigue siendo la física del aro (`onScore`), y funciona justo porque el concurso
+  está activo: de ahí la espera. En el HUD, la barra del concurso se queda en **0:00** con el aviso
+  «¡Bocina! Vale el balón que va en el aire», así que se ve que la partida no ha terminado y por qué.
+* Un tiro sobre la bocina que entra se canta (**«¡Sobre la bocina!»**), y el aviso va **el último de
+  `onScore`**, después del «¡Canasta!»: los dos escriben en el mismo elemento del DOM, así que
+  anunciarlo antes es no anunciarlo —la misma lección que ya estaba escrita allí para el Takeover—.
+  Medido: en el fotograma de la canasta el «¡Canasta!» no llega a verse, lo pisa el aviso de la
+  bocina.
+
+### Medido en vivo (reloj agotado de verdad, no un atajo)
+
+Guion en la página: convocar en el carrito, tirar el primer balón (es el que arranca el reloj),
+mantener el tiro cargado y soltarlo con ~1 s por jugar, muestreando cada 100 ms. Tres partidas de
+60 s:
+
+| Qué | Resultado |
+|---|---|
+| Suelta | el balón sale con `t = 1,0 s` (ensayo 1 y 2) y con `t = 0,8 s` (ensayo 3) |
+| Bocina | muestras con `t: 0`, `fin: 'tiempo'` y **`activo: true`**: el concurso NO se ha cerrado, con el balón `flying` (`y` 4,03 → 1,61 en el ensayo 1; 4,30 → 0,50 en el 2) |
+| El tiro cuenta | canasta (ensayo 1 y 3): `balones` 2→1, `tiros` 1→**2**, `aciertos` 0→**1**, `puntos` 0→**1** · fallo (ensayo 2): `tiros` 1→**2** y `puntos` sin tocar (el fallo también es un intento, como debe ser) |
+| Cierre | `activo: false`, `fin: 'tiempo'`, `tiros: 2`, `aciertos: 1`, `puntos: 1`, y el balón de la pista de vuelta en las manos |
+| Aviso del HUD | `relojHud: "0:00"` y `aviso: "¡Bocina! Vale el balón que va en el aire"` en las tres partidas |
+| Canto | «¡Sobre la bocina!» (tras «¡Tiro perfecto!», con el «¡Canasta!» pisado en el mismo fotograma) y después la cuenta final: «Se acabó el tiempo · 1 · 1/2» |
+
+El ensayo 3 se apuntó al centro de la zona verde a propósito —`T = 5,132 s` de carga, calculado con
+`meterAt` y `sweetCenterAt`—, y el juego lo confirmó con su propio aviso: «¡Tiro perfecto!».
+
+### Estado
+
+`npx tsc --noEmit` 0 errores · `npm test` **145/145** en 10 ficheros (3 nuevos: la bocina deja el
+concurso abierto y bloquea coger, tirar y avanzar; el tiro que venía del aire se resuelve y cuenta
+—canasta y fallo—; y el cierre es de `main.ts` al salir) · `npx vite build` ✓ · `main` **704,30 kB /
+197,12 kB gzip**.
+
+### Lo que sigue pendiente (y no se toca aquí)
+
+* **Un tiro muy fallado puede salir de la cancha**: el modelo de error de `applyShotError` no tiene
+  tope para el peor caso (§3n). Visto otra vez en el ensayo 2: el balón acabó en `z = −4,48` con el
+  aro en `z = 0`.
+* Coger el siguiente balón exige estar a menos de 1,2 m del carro que toca, también con el reloj ya
+  parado por la bocina: el que devuelve el reboteador sí llega, pero no se cambia de carro a mitad de
+  la espera (es deliberado: la partida ya está decidida).
+## 3q. El entrevistador comenta tu partida, y el diálogo baja al tercio inferior
+
+Dos peticiones del propietario en la misma frase: que «el entrevistador comente mis números reales
+(tiros, récord y mejor concurso guardados en el navegador), de modo que el diálogo cambie según lo
+que haya hecho en la pista», y que «los cuadros de diálogo aparezcan en el tercio inferior
+centrados, para que luego al terminar aparezca como ya está colocado el cuadro con los contactos
+directos y el formulario».
+
+### El diálogo se escribe con la partida dentro
+
+* El guion sigue siendo una lista de datos, pero cada turno tiene ahora **dos variantes**: `host`
+  (una clave de traducción, como antes) o `dato` (un comentario sobre la partida). Son una **unión**
+  de tipos y no dos campos opcionales del mismo objeto: con `host?` y `dato?` compilaría un turno con
+  los dos —o con ninguno— y saldría una línea vacía en mitad de la entrevista.
+* `lineaDato()` lee los números de **`statsSource`**, que es el MISMO origen que el panel del récord:
+  `main.ts` ya lo tenía montado (`court.stats` y `court.contest` del navegador) y devuelve el objeto
+  vivo, el que mueve cada tiro, así que la entrevista comenta lo que acabas de hacer en esta sesión y
+  no lo que había al cargar. **No hay una segunda cuenta que se pueda quedar desfasada.**
+* Cada comentario tiene **dos frases**: con números y sin ellos. A un recién llegado no se le felicita
+  por un cero —«Y de tiros, nada todavía: no te he visto lanzar ni uno»—, que es la mitad de que el
+  diálogo cambie según lo que hayas hecho.
+* Las frases van **enteras como clave de traducción** con sus huecos `{made}`/`{attempted}`/`{pct}` y
+  `{best}`,  rellenos por el nuevo `tf()` (en `i18n.ts`). Componerlas a trozos —«llevas » + 7 +
+  « canastas»— funcionaría en castellano y no en inglés, donde el orden y el plural son otros. Un
+  hueco sin valor se queda a la vista (`{pct}`) en vez de desaparecer: es un fallo que se ve.
+* Test nuevo (`tests/i18n.test.ts`, 5 casos): que **los dos idiomas usen los mismos huecos en cada
+  clave** —lo que se rompería en silencio: la frase sale entera menos el número—, que las frases del
+  entrevistador lleven los huecos que el código espera, y que `tf` sustituya, no toque lo que no
+  tiene huecos y deje a la vista lo que no recibe.
+
+### El cuadro baja al tercio inferior y no se mueve al terminar
+
+* El modo entrevista ancla la tarjeta **abajo y centrada** (`place-items: end center`; antes
+  `end start`, pegada a la esquina). La regla del móvil que ya la centraba queda como el caso general
+  y se quita del media query de 700px, que sólo guarda sus otros ajustes.
+* Mientras dura la **conversación**, el alto se queda en **40dvh**: es una esquina de plató, y con la
+  tarjeta a media pantalla el entrevistador y el personaje se quedaban tapados, que es justo lo que
+  se está mirando. Al **terminar**, el cuadro toma el alto de siempre (**58dvh**) para que quepan
+  nombre, email y mensaje: la clase `panel__card--form` la pone `bindInterview` en el mismo sitio en
+  que el formulario deja de estar oculto, así que no hay una segunda bandera que se pueda desfasar.
+* Como la tarjeta está anclada abajo, **crecer es crecer hacia arriba**: el cuadro de contactos
+  directos y el formulario aparecen donde ya estaban, sin saltar. Medido: el borde inferior y el
+  centro horizontal no se mueven (ver la tabla).
+
+### Medido en vivo
+
+| Qué | Cómo se midió | Resultado |
+|---|---|---|
+| Comenta tus números | `court.stats` = `{made:7,attempted:12}` y `court.contest` = `9` antes de cargar | «En mi libreta llevas **7** canastas de **12** tiros, un **58 %** desde la línea. Ese es tu récord en este navegador.» y «Tu mejor concurso guardado son **9** puntos.» |
+| Y cambia si no hay nada | sin `court.stats` ni `court.contest` (navegador limpio) | «Y de tiros, nada todavía: no te he visto lanzar ni uno…» y «Y del concurso de triples no me consta nada…» |
+| Tercio inferior centrado | `getBoundingClientRect()` de la tarjeta con la conversación en marcha | `alto 413` (40dvh de 1033), `arriba 424`, `abajo 837`, **centro en el eje (0 px de desvío)** |
+| El cuadro no se mueve al terminar | la misma medida con el formulario a la vista | `alto 599` (58dvh), **mismo `abajo 837` y mismo centro**: crece hacia arriba |
+| Contactos y formulario siguen ahí | al cerrar la conversación | pestañas «Entrevista» / «Contacto directo», campos `name`/`email`/`message` (+ honeypot) y el chip del CV |
+
+### Observado (para no volver a descubrirlo)
+
+* Con el cuadro en el tercio inferior, el botón **«Ir directo al formulario»** se queda por debajo
+  del borde y hay que desplazar la conversación para verlo (el panel hace scroll). Quien quiera los
+  datos directos tiene también la pestaña «Contacto directo», que está siempre a la vista. Si molesta,
+  se arregla fijando el botón al pie del cuadro.
+
+### Estado
+
+`npx tsc --noEmit` 0 errores · `npm test` **150/150** en 11 ficheros (5 nuevos de i18n) · `npm run
+build` ✓ con la validación de contenido (`--strict`) y la versión clásica · `main` **704,71 kB /
+197,26 kB gzip**.
