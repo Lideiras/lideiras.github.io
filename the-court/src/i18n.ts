@@ -311,6 +311,30 @@ export type UIKey = keyof typeof UI;
 export const t = (key: UIKey): string => UI[key][current];
 
 /**
+ * Los cinco temas de «Sobre mí», en orden, con el rótulo de su pestaña.
+ *
+ * Antes las pestañas las montaba `panels.ts` a mano (`idx: [0]`, `[1]`…) y el
+ * texto venía de `content.about.paragraphs` por posición: añadir un párrafo por
+ * arriba desplazaba los cinco temas sin que saltara nada. Aquí está el catálogo
+ * —la lista de lo que existe— y en `content.ts` cada párrafo DICE de qué tema
+ * es, así que los dos lados se atan por `id` y no por posición.
+ *
+ * `as const satisfies` hace las dos cosas: `id` queda como literal (de ahí
+ * `TemaId`) y el catálogo sigue teniendo que ser válido como `UIKey`. Un
+ * `id` que no exista en el catálogo no compila.
+ */
+export const TEMAS_ABOUT = [
+  { id: 'intro', label: UI.tab_intro },
+  { id: 'web', label: UI.tab_web },
+  { id: 'games', label: UI.tab_games },
+  { id: 'security', label: UI.tab_security },
+  { id: 'offcourt', label: UI.tab_offcourt },
+] as const satisfies readonly { id: string; label: L10n }[];
+
+/** Ids de tema admitidos: sale del catálogo, no se escribe a mano en otro sitio. */
+export type TemaId = (typeof TEMAS_ABOUT)[number]['id'];
+
+/**
  * Igual que `t()`, pero rellenando los huecos `{nombre}` que lleve la frase.
  *
  * Las frases del entrevistador sobre la partida llevan las cifras del jugador

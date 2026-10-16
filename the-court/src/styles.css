@@ -106,6 +106,20 @@ body[data-mode='attract'] #ui { display: none; }
   text-shadow: 5px 5px 0 var(--accent-dark), 10px 10px 0 var(--shadow);
 }
 .gate-card p { color: var(--muted); margin: 1rem 0 1.75rem; font-size: .95rem; }
+.gate-sub { color: var(--accent); margin-top: .5rem; font-size: 1.15rem; font-weight: 700; letter-spacing: .04em; }
+.gate-loc { color: var(--muted); margin-top: .5rem; }
+.gate-email { margin-top: 1rem; }
+.gate-email a { color: var(--accent); text-decoration: underline; }
+/* Enlace de salto: visible al tabular y por encima del lienzo. Hoy estaba en
+   index.html pero no existía la clase: nadie lo veía ni se le llegaba con tab. */
+.skip {
+  position: fixed; inset: 1.25rem auto auto 1.25rem; z-index: 60;
+  padding: .6rem 1rem; background: var(--accent); color: #fff;
+  border: var(--bw) solid #fff; box-shadow: 4px 4px 0 var(--shadow);
+  font-family: var(--font); font-size: .85rem; text-decoration: none;
+  opacity: 0; transform: translatey(-100%); transition: transform .12s, opacity .12s;
+}
+.skip:focus-visible { opacity: 1; transform: none; }
 .gate-buttons { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
 
 .gate-buttons button {
@@ -499,7 +513,10 @@ body:not([data-mode='loading']) #loader { display: none; }
 /* `min(...)` en el `minmax` es lo que impide el scroll horizontal: sin él, una
    columna de 260px dentro de un cuerpo más estrecho que eso no baja de 260 y
    desborda (pasaba a partir de ~340px de ancho de tarjeta). */
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 1rem; }
+/* Rejilla de tarjetas: el hueco pasa de 1rem a 1.35rem. A 1rem las fichas de
+   proyecto se leían como una columna continua de texto; con más aire cada
+   proyecto es una ficha y el ojo puede saltarse los que no interesan. */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 1.35rem; }
 .card {
   border: var(--bw) solid var(--line);
   box-shadow: 5px 5px 0 var(--shadow);
@@ -516,7 +533,7 @@ body:not([data-mode='loading']) #loader { display: none; }
    10 muescas se lee a bulto; con la cifra al lado no hay que contar píxeles.
    `minmax(0, 1fr)` + `min-width: 0` evitan que un nombre largo (un framework
    con guion largo) desborde la fila en móvil. */
-.stat { display: grid; grid-template-columns: minmax(6rem, 11rem) minmax(0, 1fr) 3.2rem; gap: .8rem; align-items: center; margin: .5rem 0; }
+.stat { display: grid; grid-template-columns: minmax(6rem, 11rem) minmax(0, 1fr) 3.2rem; gap: .8rem; align-items: center; margin: .75rem 0; }
 .stat > * { min-width: 0; }
 .stat__name { font-family: var(--font-body); overflow-wrap: anywhere; }
 .stat__lv { font-family: var(--display); font-size: 1rem; text-align: right; color: var(--text); }
@@ -546,12 +563,12 @@ body:not([data-mode='loading']) #loader { display: none; }
   background: var(--accent); color: #fff;
   border: 4px solid #fff; box-shadow: 5px 5px 0 var(--shadow);
 }
-.highlights { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .8rem; margin: 1rem 0 0; }
+.highlights { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1.05rem; margin: 1.25rem 0 0; }
 .highlights > div { border: var(--bw) solid var(--line); box-shadow: 4px 4px 0 var(--shadow); padding: .6rem .7rem; background: rgba(30, 42, 76, .92); }
 .highlights dt { color: var(--muted); font-size: .72rem; }
 .highlights dd { margin: 0; font-weight: 700; color: var(--accent); }
 
-.timeline { list-style: none; margin: 0; padding: 0 0 0 1rem; border-left: 4px solid var(--accent); display: grid; gap: 1.2rem; }
+.timeline { list-style: none; margin: 0; padding: 0 0 0 1rem; border-left: 4px solid var(--accent); display: grid; gap: 1.6rem; }
 .badge {
   display: inline-block; font-size: .65rem; letter-spacing: .06em;
   padding: .15rem .5rem; background: var(--line); color: #fff;
@@ -594,22 +611,37 @@ input:focus, textarea:focus { border-color: var(--accent); outline: none; }
    lateral al cerrarse la conversación. */
 body[data-mode='interview'] .panel { background: transparent; place-items: end center; pointer-events: none; }
 body[data-mode='interview'] .panel__card {
-  pointer-events: auto; width: min(460px, 100%);
+  pointer-events: auto;
   /*
-   * El alto de la CONVERSACIÓN: la tarjeta se queda en el tercio inferior y deja
-   * ver el plató —el entrevistador y el personaje son el objeto de la escena, y
-   * con la tarjeta a media pantalla quedaban tapados—. La conversación se
-   * desplaza dentro del cuadro, que es lo que hace una esquina de televisión.
+   * TAMAÑO DE LECTURA, no de decorado.
+   *
+   * Antes iba en `min(460px, 100%)` x `min(100%, 40dvh)`: en una pantalla de
+   * 1920 eso es el 24% del ancho y 432px de alto, o sea tres líneas de
+   * conversación y un scrollbar. El comentario de entonces lo justificaba como
+   * «esquina de televisión» para no tapar al entrevistador.
+   *
+   * El propietario ha cambiado esa decision: esto es un portfolio y lo que se
+   * está leyendo es la conversación, no la escena. El plato sigue viéndose —la
+   * caja sigue anclada abajo y los laterales quedan libres— pero ahora el texto
+   * entra sin que haya que desplazarse para leer una intervención entera.
    */
-  max-height: min(100%, 40dvh);
+  width: min(760px, 100%);
+  max-height: min(100%, 62dvh);
 }
 /*
- * Al terminar el diálogo el cuadro toma el alto de siempre (58dvh): el que
- * necesita el formulario para que quepan nombre, email y mensaje sin pelearse
- * con el borde. La clase la pone `bindInterview` en el mismo sitio en que el
- * formulario deja de estar oculto.
+ * El registro es lo que hay que leer, y las respuestas son lo que hay que
+ * pulsar. Con el alto en 40dvh las dos cosas competian por el mismo sitio y el
+ * texto salía cortado. El log toma una parte fija y las respuestas se quedan
+ * pegadas al borde inferior.
  */
-body[data-mode='interview'] .panel__card--form { max-height: min(100%, 58dvh); }
+.dlg__log { min-height: min(38dvh, 320px); }
+/*
+ * Al terminar el diálogo el cuadro toma el alto de siempre: el que necesita el
+ * formulario para que quepan nombre, email y mensaje sin pelearse con el borde.
+ * La clase la pone `bindInterview` en el mismo sitio en que el formulario deja
+ * de estar oculto.
+ */
+body[data-mode='interview'] .panel__card--form { max-height: min(100%, 78dvh); }
 
 @media (max-width: 900px) {
   /* Móvil/tableta en vertical: la tarjeta va centrada y con el límite puesto en
@@ -627,7 +659,9 @@ body[data-mode='interview'] .panel__card--form { max-height: min(100%, 58dvh); }
   /* La entrevista ya va centrada en todos los tamaños (ver arriba); aquí sólo
      queda el resto de ajustes de móvil. */
   .stat { grid-template-columns: minmax(5rem, 8rem) minmax(0, 1fr) 2.6rem; }
-  .label { font-size: .7rem; }
+  /* El rótulo de sección es de los pocos sitios donde la referencia es .82rem:
+     bajarlo aquí era el suelo más bajo de toda la interfaz. */
+  .label { font-size: .82rem; }
 }
 
 @media (max-width: 520px) {
@@ -886,9 +920,18 @@ body[data-mode='interview'] .takeover { top: 44px; }
 .form-status {
   font-family: var(--font-body);
   font-size: 1rem;
-  line-height: 1.6;
+  line-height: 1.7;
 }
-.panel__body .prose + .prose { margin-top: .9rem; }
+/*
+ * Ritmo vertical de la prosa.
+ *
+ * Estaba en .9rem para un texto a 1rem/1.6, o sea un bloque de 16px de alto
+ * pegado al siguiente con 14px de separation y sin aire de por medio. En un
+ * portfolio, donde el texto ES el producto, esa es exactamente la sensación de
+ * «demasiado agrupado». Se sube a 1.15rem: separa los párrafos sin partir la
+ * columna en trozos sueltos.
+ */
+.panel__body .prose + .prose { margin-top: 1.15rem; }
 .panel__body h3 { font-size: 1rem; }
 
 .tabs { display: flex; flex-direction: column; }
@@ -912,11 +955,28 @@ body[data-mode='interview'] .takeover { top: 44px; }
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   border-bottom: 3px solid var(--line-hi);
+  /*
+   * Tope de alto. Con seis pestañas (todos + cinco años) la barra cabe de sobra,
+   * pero el número de pestañas CRECE con el contenido: cada año nuevo es una
+   * pestaña más y cada grupo de skills es otra. Sin tope, la barra —que es
+   * sticky— se come la tarjeta entera y el texto que hay que leer.
+   */
+  max-height: 9.5rem;
+  overflow-y: auto;
 }
 .tabs__list button {
   border: var(--bw) solid var(--line-hi); border-radius: 0;
   background: var(--panel-2); color: var(--muted);
-  font-family: var(--display); font-size: .72rem; letter-spacing: .05em;
+  /*
+   * De pixel a texto de sistema, y de .72rem a .85rem.
+   *
+   * Esta barra decide qué panel se ve: es la navegación de un panel con diez
+   * proyectos. A 11,5px en tipografía pixel el ojo tiene que descifrar cada
+   * etiqueta antes de poder compararla, que es justo lo contrario de elegir
+   * rápido. El aire voxel (borde grueso, sombra dura, sin radio) se queda; lo
+   * que cambia es la letra.
+   */
+  font-family: var(--font-body); font-size: .85rem; letter-spacing: 0;
   padding: .5rem .7rem; box-shadow: 3px 3px 0 var(--shadow);
 }
 .tabs__list button:hover { color: var(--text); background: #22304f; }
@@ -941,8 +1001,10 @@ body[data-mode='interview'] .takeover { top: 44px; }
 .proj__more { margin-bottom: .4rem; }
 .proj__more summary {
   cursor: pointer; color: var(--accent);
-  font-family: var(--display); font-size: .72rem; letter-spacing: .05em;
-  padding: .2rem 0;
+  /* Como las pestañas: es navegación, no decoración. Pixel diminuto obliga a
+     descifrar el rótulo antes de poder pulsarlo. */
+  font-family: var(--font-body); font-size: .85rem; letter-spacing: 0;
+  padding: .3rem 0;
 }
 .proj__more summary:hover { color: #fff; }
 .proj__more p { margin: .35rem 0 0; color: var(--muted); }
@@ -952,7 +1014,7 @@ body[data-mode='interview'] .takeover { top: 44px; }
 .timeline li > header { display: flex; align-items: center; justify-content: space-between; gap: .6rem; flex-wrap: wrap; margin-bottom: .35rem; }
 .timeline li h3 { margin: 0; }
 .timeline li p { margin: 0 0 .3rem; }
-.tl__when { font-family: var(--display); font-size: .72rem; letter-spacing: .04em; color: var(--muted); }
+.tl__when { font-family: var(--font-body); font-size: .85rem; letter-spacing: 0; color: var(--muted); }
 /* 1rem, no .95: es texto corrido y el suelo de legibilidad del panel es 1rem. */
 .tl__org { color: var(--muted); font-size: 1rem; }
 
@@ -1001,3 +1063,97 @@ body[data-mode='interview'] .takeover { top: 44px; }
    del rectángulo que reserva el relleno de `.panel`, así que no queda debajo de
    él en ninguna anchura. La regla anterior (`opacity: .35`) era el apaño para el
    cajón a altura completa y se va con él. */
+
+/* ── Cuadro de conversación (T12/T14) ───────────────────────────────────────
+ * El cuadro del entrevistador ya NO vive dentro del panel: es un `div` suelto
+ * pegado al borde inferior, con el panel todavía sin abrir detrás. Tres reglas y
+ * ninguna es estética:
+ *
+ * 1) NUNCA HAY QUE DESPLAZARSE PARA LEER LAS RESPUESTAS. El registro (lo ya
+ *    dicho) es la ÚNICA zona que se recorta y lleva scroll propio; la línea que
+ *    se está escribiendo, las respuestas y el botón están por debajo y no se
+ *    mueven nunca, así que el alto total lo manda el registro y las respuestas
+ *    están siempre a la vista. Es lo que el propietario pidió.
+ * 2) `z-index: 20`, por debajo del panel (30): cuando la conversación se acaba
+ *    y el panel aparece, tiene que quedar por delante sin tener que esconderse
+ *    primero.
+ * 3) Fondo opaco y SIN `backdrop-filter`: la máquina de referencia es una GPU
+ *    integrada de 2012 y el desenfojo de una caja de este tamaño en cada
+ *    fotograma, mientras se escribe el texto, es justo lo que no hay que pagar.
+ *    El borde grueso, el filo de acento y la sombra dura son los del proyecto.
+ *
+ * Los hijos (`__log`, `__now`, `__choices`) tienen nombre propio a propósito: las
+ * reglas de la entrevista dentro del panel (`.dlg__log`, que fijaba su alto en
+ * 38dvh para el alto del panel) se quedan como están, y este bloque no las
+ * toca. Los ESTILOS DE LAS LÍNEAS (`.dlg__line`, `.dlg__who`, `.dlg__text`,
+ * `.dlg__choices`, `.dlg__skip`) sí se reutilizan: describen una intervención,
+ * no un contenedor, y son exactamente lo que hace falta aquí.
+ */
+.dlgbox {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  width: min(760px, calc(100% - 20px));
+  max-height: min(62dvh, 560px);
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+  padding: .8rem .9rem .9rem;
+  background: var(--panel-solid);
+  border: var(--bw) solid var(--line-hi);
+  border-top: 3px solid var(--accent);
+  box-shadow:
+    10px 10px 0 rgba(5, 8, 18, .55),
+    0 26px 60px -14px rgba(0, 0, 0, .85);
+  /* SU PROPIA entrada, no la de la tarjeta: el cuadro está centrado con
+     `translateX(-50%)` y la animación de `panel-in` (que sube 10px) se comería
+     ese centrado durante los 180 ms, dejándolo descentrado un momento. */
+  animation: dlgbox-in .18s ease-out;
+}
+@keyframes dlgbox-in { from { opacity: 0; transform: translate(-50%, 10px); } }
+.dlgbox[hidden] { display: none; }
+.dlgbox:focus { outline: none; }
+/* El registro es lo que se recorta; `min-height: 0` es lo que deja que encoja
+   dentro del `flex` en vez de empujar las respuestas fuera del cuadro.
+ *
+ * Alto FIJO desde el primer fotograma, y no `min-height`: si el registro creciera
+ * con cada intervención, el alto del cuadro iría cambiando y la línea en curso y
+ * las respuestas —que están debajo— subirían y bajarían mientras se habla. Con
+ * `height` fijo el cuadro no se mueve nunca; el `max-height` del cuadro es la red
+ * de seguridad para cuando, con dos respuestas largas, no cabe todo. */
+.dlgbox__log {
+  display: grid;
+  gap: .5rem;
+  align-content: start;
+  min-height: 0;
+  height: min(26dvh, 220px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: .2rem;
+}
+/* La línea en curso: lo que se está escribiendo ahora mismo, siempre visible. */
+.dlgbox__now { flex: none; margin-top: .55rem; }
+.dlgbox__now:empty { margin-top: 0; }
+.dlgbox__choices { flex: none; }
+.dlgbox .dlg__skip { display: block; margin-top: .55rem; }
+/* Las respuestas van en columna en pantallas estrechas: dos frases de respuesta
+   en fila se parten en cuatro líneas y se leen peor que apiladas. */
+@media (max-width: 560px) {
+  .dlgbox { width: calc(100% - 16px); bottom: calc(8px + env(safe-area-inset-bottom, 0px)); padding: .7rem .7rem .8rem; }
+  .dlgbox__log { height: min(22dvh, 150px); }
+  .dlgbox__choices { flex-direction: column; }
+  .dlgbox__choices button { flex: none; }
+}
+
+/* MÓVIL: con la conversación en pantalla los mandos de abajo estorban.
+ *
+ * El joystick y los botones de tiro ocupan 190px de la parte baja, y el medidor y
+ * el récord se apoyan ahí también. Durante la entrevista el input del juego está
+ * APAGADO (`setMode` sólo lo habilita en `play`), así que todos esos mandos son
+ * superficie muerta encima de la que se está leyendo. Sólo se esconden mientras
+ * el modo es `interview`: al abrirse el panel el modo vuelve a ser `panel` y el
+ * HUD se ve igual que siempre. */
+body[data-mode='interview'] .touch,
+body[data-mode='interview'] .meter,
+body[data-mode='interview'] .hud__record { display: none; }

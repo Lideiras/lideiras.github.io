@@ -1,6 +1,10 @@
 import { content, type Project, type SectionId, type TimelineItem } from '../data/content';
-import { getLang, loc, t, tf, type UIKey } from '../i18n';
+import { fmtDate, persona, vistaHitos, vistaProyectos } from '../data/view';
+import { getLang, loc, t, TEMAS_ABOUT, type UIKey } from '../i18n';
 import { bindContactForm, renderContactForm } from './contactForm';
+
+/** Un texto bilingüe en dos spans, igual que en la clásica. */
+const b = (v: { es: string; en: string }): string => `<span lang="es">${esc(v.es)}</span><span lang="en">${esc(v.en)}</span>`;
 
 export const esc = (s: string): string =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string);
@@ -139,24 +143,14 @@ export function bindTabs(root: HTMLElement): void {
 const link = (l: { label: { es: string; en: string }; url: string }): string =>
   `<a class="chip chip--link" href="${esc(safeUrl(l.url))}" target="_blank" rel="noopener noreferrer">${esc(loc(l.label))}</a>`;
 
-const MONTHS: Record<'es' | 'en', string[]> = {
-  es: ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'],
-  en: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
-};
-
 /**
- * `2025-02` → `feb 2025`.
- *
- * Los hitos guardan el mes en formato ISO porque es lo que ordena bien, pero
- * `2025-02 – Actualidad` se lee como un volcado de base de datos. Los valores
- * sin mes (`2019`) se dejan tal cual: no se les inventa un mes que no consta.
+ * El orden, el agrupado y el formato de las fechas están en `data/view.ts`, no
+ * aquí: la versión clásica genera su HTML con el mismo módulo, y si el juego
+ * decidiera el orden por su cuenta las dos superficies empezarían a divergir
+ * sin que nada lo notara. El idioma sigue llegando por parámetro —esta es la
+ * superficie que lo sabe—; la vista no lo lee de ninguna parte.
  */
-const fmtDate = (d: string): string => {
-  const m = /^(\d{4})-(\d{2})$/.exec(d);
-  if (!m) return d;
-  const month = MONTHS[getLang()][Number(m[2]) - 1];
-  return month ? `${month} ${m[1]}` : d;
-};
+const fecha = (d: string): string => fmtDate(d, getLang());
 
 const highlights = (items: { label: { es: string; en: string }; value: { es: string; en: string } }[]): string =>
   `<dl class="highlights">${items
@@ -182,15 +176,11 @@ const projectCard = (p: Project): string => `
 
 /** Proyectos: una pestaña por año (el más reciente primero) y una con todo. */
 function renderProjects(): string {
-  const all = [...content.projects].sort((a, b) => b.year - a.year || a.title.localeCompare(b.title));
-  const years = [...new Set(all.map((p) => p.year))];
+  const { todos, porAnio } = vistaProyectos();
   const grid = (list: Project[]): string => `<div class="grid">${list.map(projectCard).join('')}</div>`;
   return tabs([
-    { label: `${t('tabs_all')} · ${all.length}`, html: grid(all) },
-    ...years.map((y) => {
-      const list = all.filter((p) => p.year === y);
-      return { label: `${y} · ${list.length}`, html: grid(list) };
-    }),
+    { label: `${t('tabs_all')} · ${todos.length}`, html: grid(todos) },
+    ...porAnio.map((g) => ({ label: `${g.year} · ${g.items.length}`, html: grid(g.items) })),
   ]);
 }
 
@@ -198,12 +188,12 @@ function renderProjects(): string {
 function renderSkills(): string {
   return tabs(
     content.skills.map((g) => ({
-      label: loc(g.name),
-      html: `<h3 class="tabpanel__title">${esc(loc(g.name))}</h3><ul class="skills">${g.items
+      label: b(g.name),
+      html: `<h3 class="tabpanel__title">${esc(b(g.name))}</h3><ul class="skills">${g.items
         .map(
           (i) => `<li class="stat">
-        <span class="stat__name">${esc(i.name)}</span>
-        <span class="bar" role="meter" aria-valuemin="1" aria-valuemax="10" aria-valuenow="${i.level}" aria-label="${esc(t('skills_level'))}: ${esc(i.name)} ${i.level}/10"><i style="width:${i.level * 10}%"></i></span>
+        <span class="stat__name">${esc(b(i.name))}</span>
+        <span class="bar" role="meter" aria-valuemin="1" aria-valuemax="10" aria-valuenow="${i.level}" aria-label="${esc(t('skills_level'))}: ${esc(b(i.name))} ${i.level}/10"><i style="width:${i.level * 10}%"></i></span>
         <b class="stat__lv">${i.level}<small>/10</small></b>
       </li>`,
         )
@@ -216,7 +206,7 @@ const timelineItem = (it: TimelineItem): string => `
   <li>
     <header>
       <span class="badge badge--${it.kind}">${esc(t(`kind_${it.kind}` as UIKey))}</span>
-      <span class="tl__when">${esc(fmtDate(it.start))} – ${it.end ? esc(fmtDate(it.end)) : esc(t('present'))}</span>
+      <span class="tl__when">${esc(fecha(it.start))} – ${it.end ? esc(fecha(it.end)) : esc(t('present'))}</span>
     </header>
     <h3>${esc(loc(it.title))}</h3>
     <p class="tl__org">${esc(it.org)}</p>
@@ -225,51 +215,41 @@ const timelineItem = (it: TimelineItem): string => `
 
 /** Experiencia: todo (lo más reciente primero), y luego por tipo de hito. */
 function renderExperience(): string {
-  const all = [...content.timeline].sort((a, b) => (a.start < b.start ? 1 : a.start > b.start ? -1 : 0));
+  const { todos, porTipo } = vistaHitos();
   const list = (items: TimelineItem[]): string => `<ol class="timeline">${items.map(timelineItem).join('')}</ol>`;
-  const kinds = ['work', 'education', 'sport'] as const;
   return tabs([
-    { label: `${t('tabs_all')} · ${all.length}`, html: list(all) },
-    ...kinds
-      .map((k) => ({ k, items: all.filter((x) => x.kind === k) }))
-      .filter((g) => g.items.length > 0)
-      .map((g) => ({ label: `${t(`kind_${g.k}` as UIKey)} · ${g.items.length}`, html: list(g.items) })),
+    { label: `${t('tabs_all')} · ${todos.length}`, html: list(todos) },
+    ...porTipo.map((g) => ({ label: `${t(`kind_${g.kind}` as UIKey)} · ${g.items.length}`, html: list(g.items) })),
   ]);
 }
 
 /**
- * Sobre mí: un párrafo (o tema) por pestaña.
+ * Sobre mí: una pestaña por TEMA declarado.
  *
- * El reparto es POSICIONAL sobre `content.about.paragraphs`, así que:
- *   · si un tema no tiene párrafo, su pestaña no se dibuja (no hay huecos);
- *   · si el propietario añade párrafos nuevos, los extras caen en la última
- *     pestaña en lugar de desaparecer del panel.
- * Las tarjetas de datos van aparte para que los párrafos no compitan con cifras.
+ * El atado es por `id`, no por posición: el catálogo de temas y sus rótulos
+ * viven en `TEMAS_ABOUT` (`i18n.ts`) y cada párrafo DICE de qué tema es
+ * (`content.about.topics`). Mover, quitar o añadir un párrafo dentro de un
+ * tema ya no puede reetiquetar ninguna pestaña; lo único que puede es dejar un
+ * tema sin texto, y un tema sin texto no dibuja pestaña (ni huecos ni pestañas
+ * mudas). Las tarjetas de datos van aparte para que los párrafos no compitan
+ * con cifras.
  */
 function renderAbout(): string {
-  const ps = content.about.paragraphs;
-  const groups: { label: string; idx: number[] }[] = [
-    { label: t('tab_intro'), idx: [0] },
-    { label: t('tab_web'), idx: [1] },
-    { label: t('tab_games'), idx: [2] },
-    { label: t('tab_security'), idx: [3] },
-    { label: t('tab_offcourt'), idx: [4] },
-  ];
-  const known = new Set(groups.flatMap((g) => g.idx));
-  const extra = ps.map((_, i) => i).filter((i) => !known.has(i));
-  if (extra.length) groups[groups.length - 1]!.idx.push(...extra);
-
+  const p = persona();
   const card = `<div class="playercard">
-    <div class="jersey" aria-label="${esc(t('about_number'))}">${esc(content.person.jerseyNumber)}</div>
-    <div><h3>${esc(content.person.name)}</h3><p class="muted">${esc(loc(content.person.role))} · ${esc(content.person.location)}</p></div>
+    <div class="jersey" aria-label="${esc(t('about_number'))}">${esc(p.jerseyNumber)}</div>
+    <div><h3>${esc(p.name)}</h3><p class="muted">${esc(loc(p.role))} · ${esc(p.location)}</p></div>
   </div>`;
 
-  const items: Tab[] = groups
-    .filter((g) => g.idx.some((i) => ps[i]))
-    .map((g) => ({
-      label: g.label,
-      html: g.idx.map((i) => (ps[i] ? `<p class="prose">${esc(loc(ps[i]!))}</p>` : '')).join(''),
-    }));
+  const items: Tab[] = [];
+  for (const tema of TEMAS_ABOUT) {
+    const parrafos = content.about.topics.find((x) => x.id === tema.id)?.text.filter((x) => x.es.trim() !== '' && x.en.trim() !== '') ?? [];
+    if (!parrafos.length) continue;
+    items.push({
+      label: loc(tema.label),
+      html: parrafos.map((x) => `<p class="prose">${esc(loc(x))}</p>`).join(''),
+    });
+  }
   items.push({ label: t('tab_facts'), html: highlights(content.about.highlights) });
   return card + tabs(items);
 }
@@ -294,201 +274,31 @@ function renderStats(): string {
 }
 
 /* ---------------------------------------------------------------------------
- * Entrevista: diálogo con el entrevistador y formulario al final (lote B)
+ * Contacto: una sola composición (CV, contacto directo y formulario)
  * ------------------------------------------------------------------------- */
 
 /**
- * Un turno del guion: lo que dice el entrevistador y, si toca, las dos
- * respuestas entre las que elige el jugador.
+ * Contacto: TODO lo que hay que poder hacer sin salir del panel.
  *
- * El guion es una LISTA DE DATOS y no una cascada de `if`: así el orden de la
- * conversación se lee de un vistazo, cada línea es una clave de traducción (y
- * por tanto falta una traducción = falla el build) y añadir una pregunta es
- * añadir un objeto sin tocar la máquina de estados.
+ * Hasta aquí el contacto eran dos PESTAÑAS («Entrevista» y «Contacto directo») y
+ * la entrevista además traía el formulario al final. Con el cuadro de
+ * conversación fuera del panel (`ui/dialogue.ts`) la entrevista ya no es una
+ * pestaña, así que no queda nada que tabulizar: esto es una columna y ya.
  *
- * Los turnos son dos variantes y no dos campos opcionales del mismo objeto: con
- * `host?` y `dato?` los dos a la vez —o ninguno— compilaría, y un turno sin texto
- * saldría como una línea vacía en mitad de la entrevista.
+ * El formulario NO desaparece: sigue siendo el mismo (`renderContactForm`), se
+ * conecta igual (`bindContactForm`) y se manda con la misma validación y el
+ * mismo límite de un mensaje por minuto. Lo que cambia es que se llega desde el
+ * menú sin tener que ver antes la conversación, y que desde el reportero se
+ * llega después. Es la misma Ruta A en los dos casos.
  */
-type DlgTurno =
-  | { host: UIKey; opciones?: [UIKey, UIKey] }
-  | { dato: DlgDato; opciones?: [UIKey, UIKey] };
-
-/** Los dos comentarios que salen de lo que el jugador ha hecho en la pista. */
-type DlgDato = 'tiros' | 'concurso';
-
-/**
- * La frase del entrevistador sobre la partida del jugador.
- *
- * Los números salen del MISMO origen que el panel del récord (`statsSource`, que
- * es lo que `main.ts` tiene cargado del navegador): no hay una segunda cuenta que
- * se pueda quedar desfasada de la que ve el jugador en la sexta sección. Sin
- * datos —o con la partida sin empezar— la frase es la de la ausencia, que es lo
- * que hace que el diálogo cambie según lo que haya hecho: a un recién llegado no
- * se le felicita por un cero.
- */
-function lineaDato(qué: DlgDato): string {
-  const s = statsSource.get();
-  if (qué === 'tiros') {
-    if (!s || s.attempted === 0) return t('dlg_data_shots_none');
-    return tf('dlg_data_shots', {
-      made: s.made,
-      attempted: s.attempted,
-      pct: Math.round((s.made / s.attempted) * 100),
-    });
-  }
-  if (!s || s.contestBest === 0) return t('dlg_data_contest_none');
-  return tf('dlg_data_contest', { best: s.contestBest });
-}
-
-const GUION: DlgTurno[] = [
-  { host: 'dlg_open' },
-  /*
-   * Lo primero que comenta un entrevistador que acaba de ver el partido son los
-   * números: van aquí, antes de las preguntas, y son los que hacen que la misma
-   * entrevista se lea distinta en la segunda visita.
-   */
-  { dato: 'tiros' },
-  { dato: 'concurso' },
-  { host: 'dlg_q1', opciones: ['dlg_a1a', 'dlg_a1b'] },
-  { host: 'dlg_r1' },
-  { host: 'dlg_q2', opciones: ['dlg_a2a', 'dlg_a2b'] },
-  { host: 'dlg_r2' },
-  { host: 'dlg_q3', opciones: ['dlg_a3a', 'dlg_a3b'] },
-  { host: 'dlg_r3' },
-];
-
-/**
- * Contacto: la conversación del entrevistador por delante del formulario.
- *
- * El formulario NO desaparece: sigue siendo el mismo (`renderContactForm`) y se
- * envía igual, con su validación y su límite de un mensaje por minuto. Lo que
- * cambia es dónde aparece: al final del diálogo, que es lo que pidió el
- * propietario («en vez de ser un formulario, que aparezca un diálogo entre el
- * entrevistador y el personaje»). El botón de saltar existe para quien sólo
- * quiere dejar sus datos, y se esconde en cuanto el formulario está a la vista.
- */
-export function renderInterview(): string {
-  return `<div class="dlg" data-dlg>
-    <div class="dlg__log" data-dlg-log role="log" aria-live="polite" aria-label="${esc(t('dlg_label'))}" tabindex="-1"></div>
-    <div class="dlg__choices" data-dlg-choices></div>
-    <div data-dlg-after hidden>
-      <h3 class="tabpanel__title dlg__form-title">${esc(t('dlg_form_title'))}</h3>
-      ${renderContactForm()}
-    </div>
-    <button type="button" class="btn dlg__skip" data-dlg-skip>${esc(t('dlg_skip'))}</button>
-  </div>`;
-}
-
-/**
- * Conecta el diálogo: escribe las líneas, ofrece las respuestas y al final
- * enseña el formulario.
- *
- * Va a base de nodos creados y `textContent` (nada de `innerHTML` con texto del
- * guion): así no hay forma de que una traducción con un `<` rompa la tarjeta, y
- * el `role="log"` con `aria-live="polite"` va anunciando cada intervención sin
- * que haya que hacer nada más para que un lector de pantalla siga la entrevista.
- */
-export function bindInterview(root: HTMLElement): void {
-  const box = root.querySelector<HTMLElement>('[data-dlg]');
-  if (!box) return;
-  const log = box.querySelector<HTMLElement>('[data-dlg-log]')!;
-  const choices = box.querySelector<HTMLElement>('[data-dlg-choices]')!;
-  const after = box.querySelector<HTMLElement>('[data-dlg-after]')!;
-  const skip = box.querySelector<HTMLButtonElement>('[data-dlg-skip]')!;
-  let turno = 0;
-  let timer = 0;
-
-  const linea = (quien: string, texto: string, jugador: boolean): void => {
-    const el = document.createElement('div');
-    el.className = `dlg__line${jugador ? ' dlg__line--player' : ''}`;
-    const who = document.createElement('span');
-    who.className = 'dlg__who';
-    who.textContent = quien;
-    const p = document.createElement('p');
-    p.className = 'dlg__text';
-    p.textContent = texto;
-    el.append(who, p);
-    log.appendChild(el);
-    el.scrollIntoView({ block: 'nearest' });
-  };
-
-  /** Cierra la conversación y enseña el formulario. */
-  const revelar = (): void => {
-    window.clearTimeout(timer);
-    choices.replaceChildren();
-    if (!after.hidden) return;
-    after.hidden = false;
-    /*
-     * Y el cuadro CRECE: durante la conversación la tarjeta se queda en el tercio
-     * inferior (una esquina de plató, para no tapar al entrevistador ni al
-     * personaje, que es lo que se está mirando) y al aparecer el formulario
-     * necesita el alto de siempre para que quepan los campos. La clase va aquí,
-     * pegada al `hidden` que acaba de cambiar: es el mismo cambio de estado y no
-     * hay una segunda bandera que se pueda quedar desfasada.
-     */
-    box.closest('.panel__card')?.classList.add('panel__card--form');
-    skip.hidden = true;
-    after.querySelector<HTMLInputElement>('input[name="name"]')?.focus();
-  };
-
-  const siguiente = (): void => {
-    const t2 = GUION[turno++];
-    if (!t2) {
-      revelar();
-      return;
-    }
-    linea(t('dlg_host'), 'dato' in t2 ? lineaDato(t2.dato) : t(t2.host), false);
-    if (!t2.opciones) {
-      // Pausa corta entre dos intervenciones del entrevistador: sin ella, la
-      // réplica y la pregunta siguiente caían en el mismo fotograma y se leían
-      // como una sola frase larga.
-      timer = window.setTimeout(() => {
-        if (box.isConnected) siguiente();
-      }, 520);
-      return;
-    }
-    for (const key of t2.opciones) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'btn';
-      b.textContent = t(key);
-      b.addEventListener('click', () => {
-        choices.replaceChildren();
-        linea(content.person.name, t(key), true);
-        /*
-         * El foco vuelve al registro y NO se queda en el botón borrado: al
-         * desaparecer el botón, el navegador deja el foco en el `body` y la
-         * trampa de foco del panel deja de reconocer el ciclo (el «último»
-         * elemento ya no es el que tenía el foco), así que el tabulador se
-         * escapaba del diálogo.
-         */
-        log.focus();
-        timer = window.setTimeout(() => {
-          if (box.isConnected) siguiente();
-        }, 380);
-      });
-      choices.appendChild(b);
-    }
-  };
-
-  skip.addEventListener('click', revelar);
-  siguiente();
-}
-
-/** Contacto: el CV siempre a la vista, y la entrevista separada del resto. */
 function renderContact(): string {
   return `<div class="cv-download">
     <a class="chip chip--link" href="documents/CV_eng.pdf" download="CV_Daniel_Noya.pdf">${esc(t('cv_download'))}</a>
     <span class="cv-download__note">${esc(t('cv_note'))}</span>
-  </div>${tabs([
-    { label: t('tab_message'), html: renderInterview() },
-    {
-      label: t('tab_direct'),
-      html: `<h3 class="tabpanel__title">${esc(t('contact_direct'))}</h3>
-      <p class="chips"><a class="chip chip--link" href="mailto:${esc(content.person.email)}">${esc(content.person.email)}</a>${content.person.social.map(link).join('')}</p>`,
-    },
-  ])}`;
+  </div>
+  <h3 class="tabpanel__title">${esc(t('contact_direct'))}</h3>
+  <p class="chips"><a class="chip chip--link" href="mailto:${esc(content.person.email)}">${esc(content.person.email)}</a>${content.person.social.map(link).join('')}</p>
+  ${renderContactForm()}`;
 }
 
 const RENDER: Record<SectionId, () => string> = {
@@ -527,16 +337,25 @@ export class PanelManager {
   open(id: SectionId): void {
     this.opener = document.activeElement as HTMLElement | null;
     this.current = id;
-    const title = id === 'contact' ? t('interview_title') : t(sectionKey(id));
+    /*
+     * El título del contacto ya no es el de la entrevista: la conversación se ha
+     * ido al cuadro de fuera y este panel es, en las dos rutas, lo mismo —descargar
+     * el CV, escribir al correo y mandar el formulario—. Ponerle «Entrevista en
+     * directo» mentía sobre todo en la ruta del menú, donde no hay entrevista.
+     */
+    const title = t(sectionKey(id));
     this.el.innerHTML = `<div class="panel__card panel--${id}" role="dialog" aria-modal="true" aria-labelledby="panel-title">
       <header class="panel__head"><h2 id="panel-title">${esc(title)}</h2>
       <button type="button" class="panel__close" data-close aria-label="${esc(t('close'))}">✕</button></header>
       <div class="panel__body">${RENDER[id]()}</div></div>`;
     this.el.hidden = false;
-    if (id === 'contact') {
-      bindContactForm(this.el);
-      bindInterview(this.el);
-    }
+    /*
+     * El contacto ya no trae conversación dentro: la entrevista es el cuadro de
+     * `ui/dialogue.ts`, que vive fuera del panel y sólo se abre al entrar por la
+     * zona del reportero. Aquí sólo se conecta el formulario, que es lo único
+     * que este panel tiene que saber hacer.
+     */
+    if (id === 'contact') bindContactForm(this.el);
     bindTabs(this.el);
     this.el.querySelector<HTMLElement>('[data-close]')?.focus();
   }

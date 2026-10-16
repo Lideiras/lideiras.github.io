@@ -1,0 +1,65 @@
+ Volume in drive D is Nuevo vol
+ Volume Serial Number is ACEB-2063
+
+ Directory of D:\PROYECTOS\lideiras.github.io\the-court\dist
+
+10/16/2026  10:28 AM    <DIR>          .
+10/16/2026  10:26 AM    <DIR>          ..
+10/16/2026  10:28 AM    <DIR>          assets
+10/16/2026  10:28 AM    <DIR>          classic
+10/16/2026  10:28 AM    <DIR>          documents
+10/16/2026  10:28 AM              3312 index.html
+10/16/2026  10:28 AM    <DIR>          models
+10/14/2026  04:16 PM              6215 og.png
+10/14/2026  04:16 PM                25 robots.txt
+10/14/2026  04:16 PM               181 _headers
+               4 File(s)           9733 bytes
+
+ Directory of D:\PROYECTOS\lideiras.github.io\the-court\dist\assets
+
+10/16/2026  10:28 AM    <DIR>          .
+10/16/2026  10:28 AM    <DIR>          ..
+10/16/2026  10:28 AM             13768 bebas-neue-latin-400-normal-9mHNbWWO.woff2
+10/16/2026  10:28 AM             11180 bebas-neue-latin-400-normal-Bi-ndsyu.woff
+10/16/2026  10:28 AM             14112 index-DpomDDzq.js
+10/16/2026  10:28 AM             23227 index-jmeRC5C3.css
+10/16/2026  10:28 AM            706809 main-DJZ7aMyr.js
+10/16/2026  10:28 AM              8404 silkscreen-latin-400-normal-CtPo2yA5.woff2
+10/16/2026  10:28 AM              4940 silkscreen-latin-400-normal-D0DfPJut.woff
+10/16/2026  10:28 AM              4600 silkscreen-latin-700-normal-BjMPLkh0.woff
+10/16/2026  10:28 AM              7524 silkscreen-latin-700-normal-CSE2nhgM.woff2
+               9 File(s)         794564 bytes
+
+ Directory of D:\PROYECTOS\lideiras.github.io\the-court\dist\classic
+
+10/16/2026  10:28 AM    <DIR>          .
+10/16/2026  10:28 AM    <DIR>          ..
+10/16/2026  10:28 AM    <DIR>          fonts
+10/16/2026  10:28 AM             29646 index.html
+               1 File(s)          29646 bytes
+
+ Directory of D:\PROYECTOS\lideiras.github.io\the-court\dist\classic\fonts
+
+10/16/2026  10:28 AM    <DIR>          .
+10/16/2026  10:28 AM    <DIR>          ..
+10/14/2026  04:41 PM              8404 silkscreen-latin-400-normal.woff2
+10/14/2026  04:41 PM              7524 silkscreen-latin-700-normal.woff2
+               2 File(s)          15928 bytes
+
+ Directory of D:\PROYECTOS\lideiras.github.io\the-court\dist\documents
+
+10/16/2026  10:28 AM    <DIR>          .
+10/16/2026  10:28 AM    <DIR>          ..
+10/14/2026  04:16 PM            117884 CV_eng.pdf
+               1 File(s)         117884 bytes
+
+ Directory of D:\PROYECTOS\lideiras.github.io\the-court\dist\models
+
+10/16/2026  10:28 AM    <DIR>          .
+10/16/2026  10:28 AM    <DIR>          ..
+10/14/2026  04:16 PM             63440 ball.glb
+               1 File(s)          63440 bytes
+
+     Total Files Listed:
+              18 File(s)        1031195 bytes
+              17 Dir(s)    357878423552 bytes free

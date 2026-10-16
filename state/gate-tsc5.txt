@@ -1,0 +1,1 @@
+src/data/content.ts(1,21): error TS2305: Module '"../i18n"' has no exported member 'TemaId'.

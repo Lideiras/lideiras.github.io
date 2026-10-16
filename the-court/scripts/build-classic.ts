@@ -1,22 +1,72 @@
 import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { content } from '../src/data/content';
-import type { L10n } from '../src/i18n';
+import { content, type Link } from '../src/data/content';
+import { fmtDate, persona, vistaHitos, vistaProyectos } from '../src/data/view';
+import { TEMAS_ABOUT, UI, type UIKey, type L10n } from '../src/i18n';
 
 const esc = (s: string): string => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string);
 const safe = (u: string): string => (/^(https?:|mailto:)/i.test(u) ? u : '#');
 /** Cada texto se emite en ambos idiomas; el CSS oculta el que no toca. */
 const b = (v: L10n): string => `<span lang="es">${esc(v.es)}</span><span lang="en">${esc(v.en)}</span>`;
 const L = (es: string, en: string): L10n => ({ es, en });
+const t = (key: UIKey): L10n => UI[key];
+const presente = b(UI.present);
+
+/*
+ * Orden, agrupado, formato de fechas e identidad salen de `src/data/view.ts`,
+ * el mismo módulo que consume el juego. Este guion corre en Node, y por eso la
+ * vista es pura y el idioma llega por parámetro: aquí está claro por las dos
+ * ramas del HTML (que emite cada texto en los dos idiomas y el CSS esconde uno).
+ */
+const identidad = persona();
+const proyectos = vistaProyectos();
+const hitos = vistaHitos();
+/** Una fecha en los dos idiomas, con el formato de la vista y no en crudo. */
+const fecha = (d: string): string => b({ es: fmtDate(d, 'es'), en: fmtDate(d, 'en') });
+
+/*
+ * «Sobre mí» se pinta POR TEMAS, en el mismo orden que las pestañas del juego y
+ * con el mismo rótulo (`TEMAS_ABOUT`, `i18n.ts`): el atado es por `id`, así que
+ * mover un párrafo dentro de un tema no cambia de título. Importar `i18n.ts`
+ * desde aquí es seguro para Node porque el módulo no toca el navegador en su
+ * nivel superior —`localStorage`/`document` solo se usan dentro de funciones,
+ * que este guion nunca llama—: los rótulos son datos, no idioma activo, y por
+ * eso se emiten en los dos idiomas con `b()` en lugar de con `t()`.
+ */
+const sobreMi = TEMAS_ABOUT.map((tema) => ({
+  label: tema.label,
+  parrafos: content.about.topics.find((x) => x.id === tema.id)?.text.filter((p) => p.es.trim() !== '' && p.en.trim() !== '') ?? [],
+}))
+  .filter((tema) => tema.parrafos.length)
+  .map((tema) => `<h3>${b(tema.label)}</h3>${tema.parrafos.map((p) => `<p>${b(p)}</p>`).join('')}`)
+  .join('');
+
+/** Enlace social: nombre en los dos idiomas, href seguro. */
+const link = (l: Link): string => `<a href="${esc(safe(l.url))}" rel="noopener noreferrer">${b(l.label)}</a>`;
+/** Número de nivel de una skill (sin slash para que no entre en el formato de fecha). */
+const nv = (level: number): string => String(level);
+
+/** Enlaces de las 5 secciones en los dos idiomas. */
+const secciones: [string, string, string][] = [
+  ['about', 'Sobre mí', 'About me'],
+  ['projects', 'Proyectos', 'Projects'],
+  ['skills', 'Skills', 'Skills'],
+  ['experience', 'Experiencia y estudios', 'Experience and education'],
+  ['contact', 'Contacto', 'Contact'],
+];
 
 const html = `<!doctype html>
 <html lang="es" data-l="es">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${esc(content.person.name)} · ${esc(content.person.role.es)} / ${esc(content.person.role.en)}</title>
-<meta name="description" content="${esc(content.person.role.es)} · ${esc(content.person.role.en)} · ${esc(content.person.location)}">
+<title>The Court · Lideiras Portfolio</title>
+<meta name="description" content="Software & Game Developer · ${esc(identidad.location)}">
+<meta property="og:title" content="The Court · Lideiras Portfolio">
+<meta property="og:description" content="Software & Game Developer · ${esc(identidad.location)}">
+<meta property="og:image" content="/og.png">
+<meta property="og:type" content="website">
 <link rel="canonical" href="/classic/">
 <style>
 @font-face{font-family:'Silkscreen';font-style:normal;font-weight:400;src:url('/classic/fonts/silkscreen-latin-400-normal.woff2') format('woff2')}
@@ -43,30 +93,76 @@ button:hover{transform:translate(-2px,-2px);box-shadow:7px 7px 0 var(--shadow)}
 a.big{display:inline-block;background:var(--a);color:#fff;border:3px solid #fff;box-shadow:5px 5px 0 var(--shadow);padding:.5rem 1rem;text-decoration:none;font-family:'Silkscreen',monospace;font-size:.85rem}
 </style>
 </head>
-<body>
+<body data-l="es">
 <main>
-<nav><a class="big" href="/">${b(L('🏀 Jugar la versión interactiva', '🏀 Play the interactive version'))}</a><button id="lang" type="button">EN / ES</button></nav>
-<header><h1>${esc(content.person.name)}</h1><p>${b(content.person.role)} · ${esc(content.person.location)}</p>${content.person.tagline ? `<p class="muted">${b(content.person.tagline)}</p>` : ''}</header>
+<nav aria-label="Secciones">
+<a class="big" href="/">${b(L('🏀 Jugar la versión interactiva', '🏀 Play the interactive version'))}</a>
+${(() => {
+  let enlaces = '';
+  for (const [id, es, en] of secciones) {
+    enlaces += '<a href="#' + id + '">' + b(L(es, en)) + '</a>';
+  }
+  return enlaces;
+})()}
+<button id="lang" type="button" aria-label="${esc(b(t('lang_toggle')))}">EN / ES</button>
+</nav>
+<header>
+<h1>The Court</h1>
+<p class="gate-sub">Lideiras Portfolio</p>
+<p class="gate-role">Software &amp; Game Developer</p>
+<p class="gate-loc">${esc(identidad.location)}</p>
+</header>
 
-<section id="about"><h2>${b(L('Sobre mí', 'About me'))}</h2>${content.about.paragraphs.map((p) => `<p>${b(p)}</p>`).join('')}</section>
+<section id="about">
+<h2>${b(L('Sobre mí', 'About me'))}</h2>
+${sobreMi}
+<h3>${b(L('Datos', 'Facts'))}</h3>
+${content.about.highlights.map((h) => `<div><dt>${esc(b(h.label))}</dt><dd>${esc(b(h.value))}</dd></div>`).join('')}
+</section>
 
-<section id="projects"><h2>${b(L('Proyectos', 'Projects'))}</h2>${content.projects
+<section id="projects">
+<h2>${b(L('Proyectos', 'Projects'))}</h2>
+${proyectos.todos
   .map(
-    (p) => `<article><h3>${esc(p.title)} <span class="muted">${p.year}</span></h3><p>${b(p.summary)}</p>${p.details ? `<p class="muted">${b(p.details)}</p>` : ''}<p>${p.stack.map((s) => `<span class="tag">${esc(s)}</span>`).join('')}</p><p>${p.links.map((l) => `<a href="${esc(safe(l.url))}" rel="noopener noreferrer">${b(l.label)}</a>`).join(' · ')}</p></article>`,
+    (p) => `<article>
+<h3>${esc(p.title)} <span class="muted">${p.year}</span></h3>
+<p>${b(p.summary)}</p>
+${p.details ? `<details><summary>${esc(b(UI.proj_details))}</summary><p>${b(p.details)}</p></details>` : ''}
+<p>${p.stack.map((s) => `<span class="tag">${esc(s)}</span>`).join('')}</p>
+${p.links.length ? `<p>${p.links.map(link).join(' · ')}</p>` : ''}
+</article>`,
   )
-  .join('')}</section>
+  .join('')}
+</section>
 
-<section id="skills"><h2>Skills</h2>${content.skills
-  .map((g) => `<h3>${b(g.name)}</h3><p>${g.items.map((i) => `<span class="tag">${esc(i.name)} ${i.level}/10</span>`).join('')}</p>`)
-  .join('')}</section>
+<section id="skills">
+<h2>${b(L('Skills', 'Skills'))}</h2>
+${content.skills
+  .map((g) => `<h3>${b(g.name)}</h3>
+<p>${g.items.map((i) => `<span class="tag">${esc(i.name.es)} ${nv(i.level)}/10</span>`).join('')}</p>`)
+  .join('')}
+</section>
 
-<section id="experience"><h2>${b(L('Experiencia y estudios', 'Experience and education'))}</h2>${content.timeline
-  .map((x) => `<article><h3>${b(x.title)}</h3><p class="muted">${esc(x.org)} · ${esc(x.start)} – ${x.end ? esc(x.end) : b(L('Actualidad', 'Present'))}</p><p>${b(x.description)}</p></article>`)
-  .join('')}</section>
+<section id="experience">
+<h2>${b(L('Experiencia y estudios', 'Experience and education'))}</h2>
+${hitos.todos
+  .map(
+    (x) => `<article>
+<h3>${b(x.title)} <span class="tag">${b(t(`kind_${x.kind}`))}</span></h3>
+<p class="muted">${esc(x.org)} · ${fecha(x.start)} – ${x.end ? fecha(x.end) : presente}</p>
+<p>${b(x.description)}</p>
+</article>`,
+  )
+  .join('')}
+</section>
 
-<section id="contact"><h2>${b(L('Contacto', 'Contact'))}</h2><p><a href="mailto:${esc(content.person.email)}">${esc(content.person.email)}</a></p><p>${content.person.social
-  .map((l) => `<a href="${esc(safe(l.url))}" rel="noopener noreferrer">${b(l.label)}</a>`)
-  .join(' · ')}</p></section>
+<section id="contact">
+<h2>${b(L('Contacto', 'Contact'))}</h2>
+<p>${b(t('cv_download'))} <a href="${esc(safe('documents/CV_eng.pdf'))}" download="CV_Daniel_Noya.pdf">${esc(b(t('cv_download')))}</a></p>
+<p class="muted">${esc(b(t('cv_note')))}</p>
+<p><a href="mailto:${esc(content.person.email)}">${esc(content.person.email)}</a></p>
+<p>${content.person.social.map(link).join(' · ')}</p>
+</section>
 </main>
 <script>
 (function(){var r=document.documentElement,s;try{s=localStorage.getItem('court.lang')}catch(e){}

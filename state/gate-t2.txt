@@ -1,0 +1,10 @@
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mD:/PROYECTOS/lideiras.github.io/the-court[39m
+
+ [32m✓[39m tests/vista-pura.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 139[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m8 passed[39m[22m[90m (8)[39m
+[2m   Start at [22m 10:37:24
+[2m   Duration [22m 1.05s[2m (transform 109ms, setup 0ms, collect 75ms, tests 139ms, environment 0ms, prepare 159ms)[22m
+

@@ -1,0 +1,23 @@
+
+> the-court@1.0.0 prebuild
+> npm run validate -- --strict && npm run classic
+
+
+> the-court@1.0.0 validate
+> tsx scripts/validate-content.ts --strict
+
+✓ content.ts válido (10 proyectos, 6 grupos de skills, 11 hitos)
+
+> the-court@1.0.0 classic
+> tsx scripts/build-classic.ts
+
+✓ public/classic/index.html generado desde content.ts (2 fuentes pixel copiadas)
+
+> the-court@1.0.0 build
+> tsc --noEmit && vite build
+
+tests/guardas-contenido.test.ts(61,19): error TS2556: A spread argument must either have a tuple type or be passed to a rest parameter.
+tests/identidad-publicada.test.ts(61,5): error TS2304: Cannot find name 'constScripts'.
+tests/identidad-publicada.test.ts(62,12): error TS2304: Cannot find name 'scripts'.
+tests/identidad-publicada.test.ts(65,19): error TS2304: Cannot find name 'scripts'.
+tests/identidad-publicada.test.ts(65,35): error TS7006: Parameter 's' implicitly has an 'any' type.

@@ -1,0 +1,15 @@
+{
+  "baseline_date": "2026-10-16",
+  "branch": "main",
+  "working_tree": "limpio",
+  "ejecutado_por": "orchestrator (los subagentes no tienen permiso de shell)",
+  "gates": [
+    { "id": "types", "exit": 0, "estado": "PASS", "nota": "salida vacia" },
+    { "id": "test", "exit": 0, "estado": "PASS", "nota": "12 ficheros, 163 tests, 19.77s" },
+    { "id": "validate", "exit": 0, "estado": "PASS", "nota": "content.ts valido (10 proyectos, 6 grupos skills, 11 hitos)" },
+    { "id": "build", "exit": 0, "estado": "PASS", "nota": "vite 6.4.4, 36 modulos, built in 8.03s; main-DJZ7aMyr.js 706.81 kB (gzip 197.82), css 23.23 kB (gzip 5.71)" },
+    { "id": "sync-classic", "estado": "PASS", "nota": "classic/index.html identico al generado" },
+    { "id": "sync-root", "estado": "PASS", "nota": "index.html raiz identico a the-court/dist/index.html" }
+  ],
+  "conclusion": "Baseline VERDE en los 6 gates. Cualquier cambio posterior debe dejar los 6 en verde. Ojo: sync-classic y sync-root pasan hoy solo porque el propietario copio a mano; el build NO los actualiza."
+}

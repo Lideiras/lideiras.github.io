@@ -1,0 +1,11 @@
+src/data/content.ts(169,7): error TS1136: Property assignment expected.
+src/data/content.ts(171,11): error TS1005: ';' expected.
+src/data/content.ts(172,7): error TS1109: Expression expected.
+src/data/content.ts(172,8): error TS1128: Declaration or statement expected.
+src/data/content.ts(173,5): error TS1128: Declaration or statement expected.
+src/data/content.ts(173,6): error TS1128: Declaration or statement expected.
+src/data/content.ts(192,3): error TS1109: Expression expected.
+src/data/content.ts(192,4): error TS1128: Declaration or statement expected.
+src/data/content.ts(356,9): error TS1005: ';' expected.
+src/data/content.ts(432,11): error TS1005: ';' expected.
+src/data/content.ts(566,1): error TS1109: Expression expected.

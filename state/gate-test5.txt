@@ -1,0 +1,551 @@
+
+> the-court@1.0.0 test
+> vitest run
+
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mD:/PROYECTOS/lideiras.github.io/the-court[39m
+
+ [32m✓[39m tests/contest.test.ts [2m([22m[2m22 tests[22m[2m)[22m[90m 25[2mms[22m[39m
+ [31m❯[39m tests/guardas-contenido.test.ts [2m([22m[2m11 tests[22m[2m | [22m[31m7 failed[39m[2m)[22m[90m 65[2mms[22m[39m
+[31m   [31m×[31m T10 · las guardas del contenido rechazan lo que no puede pasar[2m > [22mel contenido real pasa sus propias guardas[90m 19[2mms[22m[31m[39m
+[31m     → el contenido que hay en el repo no pasa las guardas: : expected '' to deeply equal [][39m
+[31m   [31m×[31m T10 · las guardas del contenido rechazan lo que no puede pasar[2m > [22mrechaza un nivel de skill fuera de 1-10[90m 3[2mms[22m[31m[39m
+[31m     → un nivel 11 pasa el validador sin decir nada: expected 0 to be greater than 0[39m
+[31m   [31m×[31m T10 · las guardas del contenido rechazan lo que no puede pasar[2m > [22mrechaza un nivel por debajo de 1[90m 5[2mms[22m[31m[39m
+[31m     → un nivel 0 pasa el validador sin decir nada: expected 0 to be greater than 0[39m
+[31m   [31m×[31m T10 · las guardas del contenido rechazan lo que no puede pasar[2m > [22mrechaza un grupo de skills vacío[90m 4[2mms[22m[31m[39m
+[31m     → un grupo de skills sin ninguna skill pasa el validador: expected 0 to be greater than 0[39m
+[31m   [31m×[31m T10 · las guardas del contenido rechazan lo que no puede pasar[2m > [22mrechaza un proyecto sin título[90m 2[2mms[22m[31m[39m
+[31m     → un proyecto con el título en blanco pasa el validador: expected 0 to be greater than 0[39m
+[31m   [31m×[31m T10 · en --strict salen las reglas de longitud[2m > [22mrechaza un resumen de más de 200 caracteres[90m 2[2mms[22m[31m[39m
+[31m     → un resumen de 260 caracteres pasa incluso en --strict: expected 0 to be greater than 0[39m
+[31m   [31m×[31m T10 · en --strict salen las reglas de longitud[2m > [22mrechaza detalles de más de 600 caracteres[90m 2[2mms[22m[31m[39m
+[31m     → unos detalles de 700 caracteres pasan incluso en --strict: expected 0 to be greater than 0[39m
+ [32m✓[39m tests/about-temas.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [31m❯[39m tests/paridad-clasica.test.ts [2m([22m[2m13 tests[22m[2m | [22m[31m11 failed[39m[2m)[22m[90m 83[2mms[22m[39m
+[31m   [31m×[31m T7 · la clásica no tiene párrafos vacíos[2m > [22mno queda ningún <p></p> en el HTML[90m 27[2mms[22m[31m[39m
+[31m     → hay 6 párrafos vacíos: quita el <p> cuando no haya nada que meter dentro: expected 6 to be +0 // Object.is equality[39m
+[31m   [31m×[31m T7 · las fechas se muestran como fechas[2m > [22mno sale ninguna fecha en crudo (2025-02)[90m 9[2mms[22m[31m[39m
+[31m     → la sección de experiencia suelta 0 fechas en crudo (…): expected +0 to deeply equal [][39m
+[31m   [31m×[31m T7 · cada sección lleva su título en los dos idiomas[2m > [22mtodos los <h2> traen <span lang="es"> y <span lang="en">[90m 5[2mms[22m[31m[39m
+[31m     → estos <h2> no están bilingües: Skills: expected [ 'Skills' ] to deeply equal [][39m
+[31m   [31m×[31m T7 · los datos y la jerarquía de la clásica[2m > [22mcada hito lleva su etiqueta de tipo (Trabajo, Estudios, Deporte)[90m 5[2mms[22m[31m[39m
+[31m     → 8 hitos no dicen si son de trabajo, de estudios o de deporte: expected 8 to be +0 // Object.is equality[39m
+[31m   [31m×[31m T7 · los datos y la jerarquía de la clásica[2m > [22mlos detalles largos del proyecto van plegados[90m 2[2mms[22m[31m[39m
+[31m     → solo hay 0 bloques plegados y 10 proyectos tienen detalles: expected 0 to be greater than or equal to 10[39m
+[31m   [31m×[31m T7 · los datos y la jerarquía de la clásica[2m > [22mel primer proyecto es el más reciente[90m 5[2mms[22m[31m[39m
+[31m     → el primer proyecto es «Endless Blue 2025» y el más reciente es «Endless Blue» (2025): expected 'Endless Blue 2025' to be 'Endless Blue' // Object.is equality[39m
+[31m   [31m×[31m T6 · el contacto se ve sin recorrer la página[2m > [22mel correo aparece antes de la sección de proyectos[90m 9[2mms[22m[31m[39m
+[31m     → el correo sale DESPUÉS de la sección de proyectos: hay que bajar hasta el final para poder escribir: expected 29899 to be less than 6895[39m
+[31m   [31m×[31m T6 · el contacto se ve sin recorrer la página[2m > [22mel nav lleva las cinco anclas que saltan a las secciones[90m 5[2mms[22m[31m[39m
+[31m     → el nav no salta a: about, projects, skills, experience, contact: expected [ 'about', 'projects', 'skills', …(2) ] to deeply equal [][39m
+[31m   [31m×[31m T6 · el contacto se ve sin recorrer la página[2m > [22mel botón de idioma tiene aria-label[90m 3[2mms[22m[31m[39m
+[31m     → el botón de idioma no dice para qué sirve a un lector de pantalla: expected '<button id="lang" type="button">' to match /aria-label/[39m
+[31m   [31m×[31m T7 · metadatos de la clásica[2m > [22mtrae los og:* que comparte en redes[90m 3[2mms[22m[31m[39m
+[31m     → falta <meta property="og:title"> en la clásica: expected '<!doctype html>\n<html lang="es" data…' to contain 'property="og:title"'[39m
+[31m   [31m×[31m AC4 · la clásica sale de `content.ts`, sin recortes[2m > [22mtodo el texto del contenido aparece en el HTML generado[90m 3[2mms[22m[31m[39m
+[31m     → estos textos de `content.ts` no salen en la clásica: about.highlights[0].label.es, about.highlights[0].label.en, about.highlights[0].value.es, about.highlights[0].value.en, about.highlights[1].label.en, about.highlights[2].label.es, about.highlights[2].label.en: expected [ Array(7) ] to deeply equal [][39m
+ [31m❯[39m tests/medida-lectura.test.ts [2m([22m[2m10 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[90m 40[2mms[22m[39m
+[31m   [31m×[31m T9 · el enlace de salto existe de verdad[2m > [22m`styles.css` define la clase `.skip` que usa el index.html[90m 18[2mms[22m[31m[39m
+[31m     → la clase `.skip` del enlace de salto no está definida en styles.css: expected false to be true // Object.is equality[39m
+ [32m✓[39m tests/collide.test.ts [2m([22m[2m17 tests[22m[2m)[22m[33m 434[2mms[22m[39m
+ [32m✓[39m tests/vista-pura.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 130[2mms[22m[39m
+ [32m✓[39m tests/dunk.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m tests/fireTrail.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 17[2mms[22m[39m
+ [32m✓[39m tests/shot.test.ts [2m([22m[2m22 tests[22m[2m)[22m[90m 43[2mms[22m[39m
+ [31m❯[39m tests/etiquetas-contenido.test.ts [2m([22m[2m4 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m[90m 27[2mms[22m[39m
+[31m   [31m×[31m T4 · las etiquetas de contenido están traducidas o son token técnico[2m > [22mninguna etiqueta queda en inglés dentro de la interfaz en español[90m 20[2mms[22m[31m[39m
+[31m     → estas etiquetas se pintan tal cual en el panel en español y deberían ser L10n (es/en) o un token técnico declarado: expected [ …(8) ] to deeply equal [][39m
+[31m   [31m×[31m T4 · las etiquetas de contenido están traducidas o son token técnico[2m > [22mel skills de la zona española del portfolio se puede leer sin inglés[90m 3[2mms[22m[31m[39m
+[31m     → en la pestaña de Skills en español saldrían estas etiquetas en inglés: Game development, Game design, Application development, Software development, Database management, Vulnerability assessment, Security auditing: expected [ 'Game development', …(6) ] to deeply equal [][39m
+ [32m✓[39m tests/ball.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 20[2mms[22m[39m
+ [32m✓[39m tests/commentary.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [31m❯[39m tests/identidad-publicada.test.ts [2m([22m[2m5 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[90m 24[2mms[22m[39m
+[31m   [31m×[31m T11 · lo publicado identifica a la persona con los datos de `content.ts`[2m > [22mindex.html (raíz) lleva nombre, puesto en los dos idiomas y ubicación[90m 16[2mms[22m[31m[39m
+[31m     → a index.html (raíz) le faltan datos de `content.ts`: person.role.es ("Desarrollador Full Stack"), person.location ("Girona, Catalonia"): expected [ 'person.role.es', 'person.location' ] to deeply equal [][39m
+ [32m✓[39m tests/camera.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m tests/i18n.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m tests/jump.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 84[2mms[22m[39m
+ [32m✓[39m tests/court.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m tests/human.test.ts [2m([22m[2m34 tests[22m[2m)[22m[33m 29887[2mms[22m[39m
+   [33m[2m✓[22m[39m inclinacion al moverse[2m > [22mquieto: el torso queda vertical [33m1547[2mms[22m[39m
+   [33m[2m✓[22m[39m inclinacion al moverse[2m > [22mcorriendo: el torso se echa hacia delante [33m1473[2mms[22m[39m
+   [33m[2m✓[22m[39m inclinacion al moverse[2m > [22mes proporcional a la velocidad: medio paso = media inclinacion [33m2230[2mms[22m[39m
+   [33m[2m✓[22m[39m inclinacion al moverse[2m > [22men el aire se atenua: no hay apoyo desde el que empujarse [33m2352[2mms[22m[39m
+   [33m[2m✓[22m[39m inclinacion al moverse[2m > [22mla cabeza avanza con el torso: inclinacion, no torsión [33m2306[2mms[22m[39m
+   [33m[2m✓[22m[39m inclinacion al moverse[2m > [22mlas piernas NO se inclinan con el torso [33m1878[2mms[22m[39m
+   [33m[2m✓[22m[39m regresion: las poses existentes siguen mandando[2m > [22mposeShoot sigue retiring el torso por su cuenta [33m770[2mms[22m[39m
+   [33m[2m✓[22m[39m regresion: las poses existentes siguen mandando[2m > [22mposeCelebrate no pisa la inclinacion [33m853[2mms[22m[39m
+   [33m[2m✓[22m[39m continuidad de pose: recoger el balón[2m > [22mal recoger el balón los brazos NO dan ningún salto [33m799[2mms[22m[39m
+   [33m[2m✓[22m[39m continuidad de pose: recoger el balón[2m > [22mel salto que había antes lo cogía este test (control) [33m872[2mms[22m[39m
+   [33m[2m✓[22m[39m continuidad de pose: recoger el balón[2m > [22mtras el gesto de recoger, los brazos vuelven a la pose base [33m1533[2mms[22m[39m
+   [33m[2m✓[22m[39m continuidad de pose: las poses se mezclan, no se imponen[2m > [22mposeShoot con peso 0 no toca ningún hueso [33m811[2mms[22m[39m
+   [33m[2m✓[22m[39m continuidad de pose: las poses se mezclan, no se imponen[2m > [22mposeCelebrate con peso 0 no toca ningún hueso [33m742[2mms[22m[39m
+   [33m[2m✓[22m[39m continuidad de pose: las poses se mezclan, no se imponen[2m > [22mcon peso 1 la pose sigue mandando (regresión de las poses viejas) [33m773[2mms[22m[39m
+   [33m[2m✓[22m[39m continuidad de pose: las poses se mezclan, no se imponen[2m > [22mcargar y soltar el tiro no produce saltos de brazo [33m677[2mms[22m[39m
+   [33m[2m✓[22m[39m regate: el brazo y el balón comparten fase[2m > [22mel brazo empuja CUANDO el balón toca el suelo, no cuando está arriba [33m874[2mms[22m[39m
+   [33m[2m✓[22m[39m gestos por distancia: mate y tiro lejano[2m > [22mposeDunk con peso 0 no toca ningún hueso [33m758[2mms[22m[39m
+   [33m[2m✓[22m[39m gestos por distancia: mate y tiro lejano[2m > [22mposeLejano con peso 0 no toca ningún hueso [33m747[2mms[22m[39m
+   [33m[2m✓[22m[39m gestos por distancia: mate y tiro lejano[2m > [22mlos tres gestos con peso 1 son DISTINTOS entre sí [33m3832[2mms[22m[39m
+   [33m[2m✓[22m[39m corte: el cuerpo se inclina hacia dentro del giro[2m > [22msin corte no hay inclinación lateral ni se queda residuo [33m791[2mms[22m[39m
+   [33m[2m✓[22m[39m corte: el cuerpo se inclina hacia dentro del giro[2m > [22mla inclinación va hacia el lado del giro, no siempre al mismo [33m755[2mms[22m[39m
+   [33m[2m✓[22m[39m corte: el cuerpo se inclina hacia dentro del giro[2m > [22mel corte NO toca las piernas ni inclina hacia delante [33m1592[2mms[22m[39m
+   [33m[2m✓[22m[39m geometria de referencia (sin animacion)[2m > [22mel torso no se ha movido de sitio al colgarlo del pivote [33m826[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯[1m[7m Failed Tests 22 [27m[22m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/etiquetas-contenido.test.ts[2m > [22mT4 · las etiquetas de contenido están traducidas o son token técnico[2m > [22mninguna etiqueta queda en inglés dentro de la interfaz en español
+[31m[1mAssertionError[22m: estas etiquetas se pintan tal cual en el panel en español y deberían ser L10n (es/en) o un token técnico declarado: expected [ …(8) ] to deeply equal [][39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- Array [][39m
+[31m+ Array [[39m
+[31m+   "skills[3].items[0] (areas): \"Game development\"",[39m
+[31m+   "skills[3].items[1] (areas): \"Game design\"",[39m
+[31m+   "skills[3].items[2] (areas): \"Application development\"",[39m
+[31m+   "skills[3].items[3] (areas): \"Software development\"",[39m
+[31m+   "skills[3].items[4] (areas): \"Database management\"",[39m
+[31m+   "skills[4].items[1] (security): \"Vulnerability assessment\"",[39m
+[31m+   "skills[4].items[2] (security): \"Security auditing\"",[39m
+[31m+   "projects[3].stack[4] (vr-game): \"Unity XR Interaction Toolkit\"",[39m
+[31m+ ][39m
+
+[36m [2m❯[22m tests/etiquetas-contenido.test.ts:[2m64:7[22m[39m
+    [90m 62| [39m      [34moffenders[39m(crudas)[33m,[39m
+    [90m 63| [39m      [32m'estas etiquetas se pintan tal cual en el panel en español y deb[39m…
+    [90m 64| [39m    )[33m.[39m[34mtoEqual[39m([])[33m;[39m
+    [90m   | [39m      [31m^[39m
+    [90m 65| [39m  })[33m;[39m
+    [90m 66| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/22]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/etiquetas-contenido.test.ts[2m > [22mT4 · las etiquetas de contenido están traducidas o son token técnico[2m > [22mel skills de la zona española del portfolio se puede leer sin inglés
+[31m[1mAssertionError[22m: en la pestaña de Skills en español saldrían estas etiquetas en inglés: Game development, Game design, Application development, Software development, Database management, Vulnerability assessment, Security auditing: expected [ 'Game development', …(6) ] to deeply equal [][39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- Array [][39m
+[31m+ Array [[39m
+[31m+   "Game development",[39m
+[31m+   "Game design",[39m
+[31m+   "Application development",[39m
+[31m+   "Software development",[39m
+[31m+   "Database management",[39m
+[31m+   "Vulnerability assessment",[39m
+[31m+   "Security auditing",[39m
+[31m+ ][39m
+
+[36m [2m❯[22m tests/etiquetas-contenido.test.ts:[2m98:119[22m[39m
+    [90m 96| [39m      [33m.[39m[34mfilter[39m((i) [33m=>[39m [35mtypeof[39m i[33m.[39mnombre [33m===[39m [32m'string'[39m [33m&&[39m [33m![39m[34mpareceTokenTecni[39m…
+    [90m 97| [39m      [33m.[39m[34mmap[39m((i) [33m=>[39m i[33m.[39mnombre)[33m;[39m
+    [90m 98| [39m    [34mexpect[39m(enIngles[33m,[39m [32m`en la pestaña de Skills en español saldrían esta[39m…
+    [90m   | [39m                                                                                                                      [31m^[39m
+    [90m 99| [39m  })[33m;[39m
+    [90m100| [39m})[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/22]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/guardas-contenido.test.ts[2m > [22mT10 · las guardas del contenido rechazan lo que no puede pasar[2m > [22mel contenido real pasa sus propias guardas
+[31m[1mAssertionError[22m: el contenido que hay en el repo no pasa las guardas: : expected '' to deeply equal [][39m
+
+[32m- Expected:[39m 
+Array []
+
+[31m+ Received:[39m 
+""
+
+[36m [2m❯[22m tests/guardas-contenido.test.ts:[2m118:112[22m[39m
+    [90m116| [39m  [34mit[39m([32m'el contenido real pasa sus propias guardas'[39m[33m,[39m () [33m=>[39m {
+    [90m117| [39m    [35mconst[39m errores [33m=[39m [34merroresDe[39m(content)[33m;[39m
+    [90m118| [39m    [34mexpect[39m(errores[33m.[39m[34mjoin[39m([32m' | '[39m)[33m,[39m [32m`el contenido que hay en el repo no pa[39m…
+    [90m   | [39m                                                                                                               [31m^[39m
+    [90m119| [39m  })[33m;[39m
+    [90m120| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/22]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/guardas-contenido.test.ts[2m > [22mT10 · las guardas del contenido rechazan lo que no puede pasar[2m > [22mrechaza un nivel de skill fuera de 1-10
+[31m[1mAssertionError[22m: un nivel 11 pasa el validador sin decir nada: expected 0 to be greater than 0[39m
+[36m [2m❯[22m tests/guardas-contenido.test.ts:[2m125:76[22m[39m
+    [90m123| [39m    (roto[33m.[39mskills[[34m0[39m][33m![39m[33m.[39mitems[[34m0[39m] [35mas[39m unknown [35mas[39m { level[33m:[39m number })[33m.[39mlevel [33m=[39m…
+    [90m124| [39m    [35mconst[39m errores [33m=[39m [34merroresDe[39m(roto)[33m;[39m
+    [90m125| [39m    [34mexpect[39m(errores[33m.[39mlength[33m,[39m [32m'un nivel 11 pasa el validador sin decir na[39m…
+    [90m   | [39m                                                                           [31m^[39m
+    [90m126| [39m    [34mexpect[39m(errores[33m.[39m[34mjoin[39m([32m' '[39m)[33m,[39m [32m`el mensaje "[39m[36m${[39merrores[33m.[39m[34mjoin[39m([32m' | '[39m)[36m}[39m[32m" no [39m…
+    [90m127| [39m  })[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/22]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/guardas-contenido.test.ts[2m > [22mT10 · las guardas del contenido rechazan lo que no puede pasar[2m > [22mrechaza un nivel por debajo de 1
+[31m[1mAssertionError[22m: un nivel 0 pasa el validador sin decir nada: expected 0 to be greater than 0[39m
+[36m [2m❯[22m tests/guardas-contenido.test.ts:[2m132:83[22m[39m
+    [90m130| [39m    [35mconst[39m roto [33m=[39m [34mclonar[39m(content)[33m;[39m
+    [90m131| [39m    (roto[33m.[39mskills[[34m0[39m][33m![39m[33m.[39mitems[[34m0[39m] [35mas[39m unknown [35mas[39m { level[33m:[39m number })[33m.[39mlevel [33m=[39m…
+    [90m132| [39m    [34mexpect[39m([34merroresDe[39m(roto)[33m.[39mlength[33m,[39m [32m'un nivel 0 pasa el validador sin d[39m…
+    [90m   | [39m                                                                                  [31m^[39m
+    [90m133| [39m  })[33m;[39m
+    [90m134| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/22]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/guardas-contenido.test.ts[2m > [22mT10 · las guardas del contenido rechazan lo que no puede pasar[2m > [22mrechaza un grupo de skills vacío
+[31m[1mAssertionError[22m: un grupo de skills sin ninguna skill pasa el validador: expected 0 to be greater than 0[39m
+[36m [2m❯[22m tests/guardas-contenido.test.ts:[2m138:94[22m[39m
+    [90m136| [39m    [35mconst[39m roto [33m=[39m [34mclonar[39m(content)[33m;[39m
+    [90m137| [39m    roto[33m.[39mskills[[34m0[39m][33m![39m[33m.[39mitems [33m=[39m [][33m;[39m
+    [90m138| [39m    [34mexpect[39m([34merroresDe[39m(roto)[33m.[39mlength[33m,[39m [32m'un grupo de skills sin ninguna ski[39m…
+    [90m   | [39m                                                                                             [31m^[39m
+    [90m139| [39m  })[33m;[39m
+    [90m140| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/22]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/guardas-contenido.test.ts[2m > [22mT10 · las guardas del contenido rechazan lo que no puede pasar[2m > [22mrechaza un proyecto sin título
+[31m[1mAssertionError[22m: un proyecto con el título en blanco pasa el validador: expected 0 to be greater than 0[39m
+[36m [2m❯[22m tests/guardas-contenido.test.ts:[2m144:93[22m[39m
+    [90m142| [39m    [35mconst[39m roto [33m=[39m [34mclonar[39m(content)[33m;[39m
+    [90m143| [39m    roto[33m.[39mprojects[[34m0[39m][33m![39m[33m.[39mtitle [33m=[39m [32m'   '[39m[33m;[39m
+    [90m144| [39m    [34mexpect[39m([34merroresDe[39m(roto)[33m.[39mlength[33m,[39m [32m'un proyecto con el título en blanc[39m…
+    [90m   | [39m                                                                                            [31m^[39m
+    [90m145| [39m  })[33m;[39m
+    [90m146| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/22]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/guardas-contenido.test.ts[2m > [22mT10 · en --strict salen las reglas de longitud[2m > [22mrechaza un resumen de más de 200 caracteres
+[31m[1mAssertionError[22m: un resumen de 260 caracteres pasa incluso en --strict: expected 0 to be greater than 0[39m
+[36m [2m❯[22m tests/guardas-contenido.test.ts:[2m197:93[22m[39m
+    [90m195| [39m    [35mconst[39m roto [33m=[39m [34mclonar[39m(content)[33m;[39m
+    [90m196| [39m    roto[33m.[39mprojects[[34m0[39m][33m![39m[33m.[39msummary[33m.[39mes [33m=[39m [34mlargo[39m([34m260[39m)[33m;[39m
+    [90m197| [39m    [34mexpect[39m([34merroresDe[39m(roto)[33m.[39mlength[33m,[39m [32m'un resumen de 260 caracteres pasa [39m…
+    [90m   | [39m                                                                                            [31m^[39m
+    [90m198| [39m  })[33m;[39m
+    [90m199| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/22]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/guardas-contenido.test.ts[2m > [22mT10 · en --strict salen las reglas de longitud[2m > [22mrechaza detalles de más de 600 caracteres
+[31m[1mAssertionError[22m: unos detalles de 700 caracteres pasan incluso en --strict: expected 0 to be greater than 0[39m
+[36m [2m❯[22m tests/guardas-contenido.test.ts:[2m203:97[22m[39m
+    [90m201| [39m    [35mconst[39m roto [33m=[39m [34mclonar[39m(content)[33m;[39m
+    [90m202| [39m    roto[33m.[39mprojects[[34m0[39m][33m![39m[33m.[39mdetails[33m![39m[33m.[39mes [33m=[39m [34mlargo[39m([34m700[39m)[33m;[39m
+    [90m203| [39m    [34mexpect[39m([34merroresDe[39m(roto)[33m.[39mlength[33m,[39m [32m'unos detalles de 700 caracteres pa[39m…
+    [90m   | [39m                                                                                                [31m^[39m
+    [90m204| [39m  })[33m;[39m
+    [90m205| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/22]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/identidad-publicada.test.ts[2m > [22mT11 · lo publicado identifica a la persona con los datos de `content.ts`[2m > [22mindex.html (raíz) lleva nombre, puesto en los dos idiomas y ubicación
+[31m[1mAssertionError[22m: a index.html (raíz) le faltan datos de `content.ts`: person.role.es ("Desarrollador Full Stack"), person.location ("Girona, Catalonia"): expected [ 'person.role.es', 'person.location' ] to deeply equal [][39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- Array [][39m
+[31m+ Array [[39m
+[31m+   "person.role.es",[39m
+[31m+   "person.location",[39m
+[31m+ ][39m
+
+[36m [2m❯[22m tests/identidad-publicada.test.ts:[2m53:9[22m[39m
+    [90m 51| [39m        faltan[33m.[39m[34mmap[39m((d) [33m=>[39m d[33m.[39metiqueta)[33m,[39m
+    [90m 52| [39m        [32m`a [39m[36m${[39mdonde[36m}[39m[32m le faltan datos de \`content.ts\`: [39m[36m${[39mfaltan[33m.[39m[34mmap[39m((d…
+    [90m 53| [39m      )[33m.[39m[34mtoEqual[39m([])[33m;[39m
+    [90m   | [39m        [31m^[39m
+    [90m 54| [39m    })[33m;[39m
+    [90m 55| [39m  }
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/22]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/medida-lectura.test.ts[2m > [22mT9 · el enlace de salto existe de verdad[2m > [22m`styles.css` define la clase `.skip` que usa el index.html
+[31m[1mAssertionError[22m: la clase `.skip` del enlace de salto no está definida en styles.css: expected false to be true // Object.is equality[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- true[39m
+[31m+ false[39m
+
+[36m [2m❯[22m tests/medida-lectura.test.ts:[2m162:108[22m[39m
+    [90m160| [39m     * sirve de nada (AC3).
+    [90m161| [39m     */[39m
+    [90m162| [39m    [34mexpect[39m([36m/\.skip\b/[39m[33m.[39m[34mtest[39m(limpio)[33m,[39m [32m'la clase `.skip` del enlace de sa[39m…
+    [90m   | [39m                                                                                                           [31m^[39m
+    [90m163| [39m  })[33m;[39m
+    [90m164| [39m})[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/22]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/paridad-clasica.test.ts[2m > [22mT7 · la clásica no tiene párrafos vacíos[2m > [22mno queda ningún <p></p> en el HTML
+[31m[1mAssertionError[22m: hay 6 párrafos vacíos: quita el <p> cuando no haya nada que meter dentro: expected 6 to be +0 // Object.is equality[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- 0[39m
+[31m+ 6[39m
+
+[36m [2m❯[22m tests/paridad-clasica.test.ts:[2m49:118[22m[39m
+    [90m 47| [39m     * ruido para el que lee el código.
+    [90m 48| [39m     */[39m
+    [90m 49| [39m    [34mexpect[39m(vacios[33m.[39mlength[33m,[39m [32m`hay [39m[36m${[39mvacios[33m.[39mlength[36m}[39m[32m párrafos vacíos: quita[39m…
+    [90m   | [39m                                                                                                                     [31m^[39m
+    [90m 50| [39m  })[33m;[39m
+    [90m 51| [39m})[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/22]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/paridad-clasica.test.ts[2m > [22mT7 · las fechas se muestran como fechas[2m > [22mno sale ninguna fecha en crudo (2025-02)
+[31m[1mAssertionError[22m: la sección de experiencia suelta 0 fechas en crudo (…): expected +0 to deeply equal [][39m
+
+[32m- Expected:[39m 
+Array []
+
+[31m+ Received:[39m 
+0
+
+[36m [2m❯[22m tests/paridad-clasica.test.ts:[2m57:132[22m[39m
+    [90m 55| [39m    [35mconst[39m hitos [33m=[39m [34mseccion[39m([32m'experience'[39m)[33m;[39m
+    [90m 56| [39m    [35mconst[39m crudas [33m=[39m hitos[33m.[39m[34mmatch[39m([36m/\b\d{4}-\d{2}\b/g[39m) [33m??[39m [][33m;[39m
+    [90m 57| [39m    [34mexpect[39m(crudas[33m.[39mlength[33m,[39m [32m`la sección de experiencia suelta [39m[36m${[39mcrudas[33m.[39ml…
+    [90m   | [39m                                                                                                                                   [31m^[39m
+    [90m 58| [39m  })[33m;[39m
+    [90m 59| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/22]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/paridad-clasica.test.ts[2m > [22mT7 · cada sección lleva su título en los dos idiomas[2m > [22mtodos los <h2> traen <span lang="es"> y <span lang="en">
+[31m[1mAssertionError[22m: estos <h2> no están bilingües: Skills: expected [ 'Skills' ] to deeply equal [][39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- Array [][39m
+[31m+ Array [[39m
+[31m+   "Skills",[39m
+[31m+ ][39m
+
+[36m [2m❯[22m tests/paridad-clasica.test.ts:[2m77:86[22m[39m
+    [90m 75| [39m    [34mexpect[39m(h2[33m.[39mlength[33m,[39m [32m'no se ha encontrado ningún <h2> en la clásica'[39m)…
+    [90m 76| [39m    [35mconst[39m sinTraducir [33m=[39m h2[33m.[39m[34mfilter[39m((cuerpo) [33m=>[39m [33m![39mcuerpo[33m.[39m[34mincludes[39m([32m'<span [39m…
+    [90m 77| [39m    [34mexpect[39m(sinTraducir[33m,[39m [32m`estos <h2> no están bilingües: [39m[36m${[39msinTraducir[33m.[39m…
+    [90m   | [39m                                                                                     [31m^[39m
+    [90m 78| [39m  })[33m;[39m
+    [90m 79| [39m})[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/22]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/paridad-clasica.test.ts[2m > [22mT7 · los datos y la jerarquía de la clásica[2m > [22mcada hito lleva su etiqueta de tipo (Trabajo, Estudios, Deporte)
+[31m[1mAssertionError[22m: 8 hitos no dicen si son de trabajo, de estudios o de deporte: expected 8 to be +0 // Object.is equality[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- 0[39m
+[31m+ 8[39m
+
+[36m [2m❯[22m tests/paridad-clasica.test.ts:[2m90:116[22m[39m
+    [90m 88| [39m    [35mconst[39m etiquetas [33m=[39m [[33mUI[39m[33m.[39mkind_work[33m,[39m [33mUI[39m[33m.[39mkind_education[33m,[39m [33mUI[39m[33m.[39mkind_sport]…
+    [90m 89| [39m    [35mconst[39m sinEtiqueta [33m=[39m articulos[33m.[39m[34mfilter[39m((a) [33m=>[39m [33m![39metiquetas[33m.[39m[34msome[39m((e) [33m=>[39m…
+    [90m 90| [39m    [34mexpect[39m(sinEtiqueta[33m.[39mlength[33m,[39m [32m`[39m[36m${[39msinEtiqueta[33m.[39mlength[36m}[39m[32m hitos no dicen s[39m…
+    [90m   | [39m                                                                                                                   [31m^[39m
+    [90m 91| [39m  })[33m;[39m
+    [90m 92| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/22]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/paridad-clasica.test.ts[2m > [22mT7 · los datos y la jerarquía de la clásica[2m > [22mlos detalles largos del proyecto van plegados
+[31m[1mAssertionError[22m: solo hay 0 bloques plegados y 10 proyectos tienen detalles: expected 0 to be greater than or equal to 10[39m
+[36m [2m❯[22m tests/paridad-clasica.test.ts:[2m97:106[22m[39m
+    [90m 95| [39m    [35mconst[39m conDetalles [33m=[39m content[33m.[39mprojects[33m.[39m[34mfilter[39m((p) [33m=>[39m p[33m.[39mdetails)[33m.[39mleng…
+    [90m 96| [39m    [35mconst[39m plegados [33m=[39m [[33m...[39mproyectos[33m.[39m[34mmatchAll[39m([36m/<details/g[39m)][33m.[39mlength[33m;[39m
+    [90m 97| [39m    [34mexpect[39m(plegados[33m,[39m [32m`solo hay [39m[36m${[39mplegados[36m}[39m[32m bloques plegados y [39m[36m${[39mconDet…
+    [90m   | [39m                                                                                                         [31m^[39m
+    [90m 98| [39m  })[33m;[39m
+    [90m 99| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/22]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/paridad-clasica.test.ts[2m > [22mT7 · los datos y la jerarquía de la clásica[2m > [22mel primer proyecto es el más reciente
+[31m[1mAssertionError[22m: el primer proyecto es «Endless Blue 2025» y el más reciente es «Endless Blue» (2025): expected 'Endless Blue 2025' to be 'Endless Blue' // Object.is equality[39m
+
+Expected: [32m"Endless Blue"[39m
+Received: [31m"Endless Blue[7m 2025[27m"[39m
+
+[36m [2m❯[22m tests/paridad-clasica.test.ts:[2m108:7[22m[39m
+    [90m106| [39m      titulos[[34m0[39m][33m,[39m
+    [90m107| [39m      [32m`el primer proyecto es «[39m[36m${[39mtitulos[[34m0[39m][36m}[39m[32m» y el más reciente es «[39m[36m${[39mm…
+    [90m108| [39m    )[33m.[39m[34mtoBe[39m([34mesc[39m(masReciente[33m.[39mtitle))[33m;[39m
+    [90m   | [39m      [31m^[39m
+    [90m109| [39m  })[33m;[39m
+    [90m110| [39m})[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/22]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/paridad-clasica.test.ts[2m > [22mT6 · el contacto se ve sin recorrer la página[2m > [22mel correo aparece antes de la sección de proyectos
+[31m[1mAssertionError[22m: el correo sale DESPUÉS de la sección de proyectos: hay que bajar hasta el final para poder escribir: expected 29899 to be less than 6895[39m
+[36m [2m❯[22m tests/paridad-clasica.test.ts:[2m121:7[22m[39m
+    [90m119| [39m      correo[33m,[39m
+    [90m120| [39m      [32m'el correo sale DESPUÉS de la sección de proyectos: hay que baja[39m…
+    [90m121| [39m    )[33m.[39m[34mtoBeLessThan[39m(proyectos)[33m;[39m
+    [90m   | [39m      [31m^[39m
+    [90m122| [39m  })[33m;[39m
+    [90m123| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/22]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/paridad-clasica.test.ts[2m > [22mT6 · el contacto se ve sin recorrer la página[2m > [22mel nav lleva las cinco anclas que saltan a las secciones
+[31m[1mAssertionError[22m: el nav no salta a: about, projects, skills, experience, contact: expected [ 'about', 'projects', 'skills', …(2) ] to deeply equal [][39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- Array [][39m
+[31m+ Array [[39m
+[31m+   "about",[39m
+[31m+   "projects",[39m
+[31m+   "skills",[39m
+[31m+   "experience",[39m
+[31m+   "contact",[39m
+[31m+ ][39m
+
+[36m [2m❯[22m tests/paridad-clasica.test.ts:[2m130:63[22m[39m
+    [90m128| [39m    [35mconst[39m secciones [33m=[39m [[32m'about'[39m[33m,[39m [32m'projects'[39m[33m,[39m [32m'skills'[39m[33m,[39m [32m'experience'[39m[33m,[39m [32m'c[39m…
+    [90m129| [39m    [35mconst[39m faltan [33m=[39m secciones[33m.[39m[34mfilter[39m((id) [33m=>[39m [33m![39mnav[33m.[39m[34mincludes[39m([32m`href="#[39m[36m${[39mid…
+    [90m130| [39m    [34mexpect[39m(faltan[33m,[39m [32m`el nav no salta a: [39m[36m${[39mfaltan[33m.[39m[34mjoin[39m([32m', '[39m)[36m}[39m[32m`[39m)[33m.[39m[34mtoEqual[39m(…
+    [90m   | [39m                                                              [31m^[39m
+    [90m131| [39m  })[33m;[39m
+    [90m132| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[19/22]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/paridad-clasica.test.ts[2m > [22mT6 · el contacto se ve sin recorrer la página[2m > [22mel botón de idioma tiene aria-label
+[31m[1mAssertionError[22m: el botón de idioma no dice para qué sirve a un lector de pantalla: expected '<button id="lang" type="button">' to match /aria-label/[39m
+
+[32m- Expected:[39m 
+/aria-label/
+
+[31m+ Received:[39m 
+"<button id=\"lang\" type=\"button\">"
+
+[36m [2m❯[22m tests/paridad-clasica.test.ts:[2m137:88[22m[39m
+    [90m135| [39m    [35mconst[39m boton [33m=[39m [36m/<button[^>]*id="lang"[^>]*>/[39m[33m.[39m[34mexec[39m(doc)[33m?.[39m[[34m0[39m] [33m??[39m [32m''[39m[33m;[39m
+    [90m136| [39m    [34mexpect[39m(boton[33m,[39m [32m'no se ha encontrado el botón de idioma'[39m)[33m.[39mnot[33m.[39m[34mtoBe[39m([32m'[39m…
+    [90m137| [39m    [34mexpect[39m(boton[33m,[39m [32m'el botón de idioma no dice para qué sirve a un lect[39m…
+    [90m   | [39m                                                                                       [31m^[39m
+    [90m138| [39m  })[33m;[39m
+    [90m139| [39m})[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[20/22]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/paridad-clasica.test.ts[2m > [22mT7 · metadatos de la clásica[2m > [22mtrae los og:* que comparte en redes
+[31m[1mAssertionError[22m: falta <meta property="og:title"> en la clásica: expected '<!doctype html>\n<html lang="es" data…' to contain 'property="og:title"'[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- property="og:title"[39m
+[31m+ <!doctype html>[39m
+[31m+ <html lang="es" data-l="es">[39m
+[31m+ <head>[39m
+[31m+ <meta charset="utf-8">[39m
+[31m+ <meta name="viewport" content="width=device-width,initial-scale=1">[39m
+[31m+ <title>Daniel Noya Catoira · Desarrollador Full Stack / Full Stack Developer</title>[39m
+[31m+ <meta name="description" content="Desarrollador Full Stack · Full Stack Developer · Girona, Catalonia">[39m
+[31m+ <link rel="canonical" href="/classic/">[39m
+[31m+ <style>[39m
+[31m+ @font-face{font-family:'Silkscreen';font-style:normal;font-weight:400;src:url('/classic/fonts/silkscreen-latin-400-normal.woff2') format('woff2')}[39m
+[31m+ @font-face{font-family:'Silkscreen';font-style:normal;font-weight:700;src:url('/classic/fonts/silkscreen-latin-700-normal.woff2') format('woff2')}[39m
+[31m+ :root{color-scheme:dark;--a:#ff6a1a;--panel:#111a33;--panel2:#1b2748;--line:#3c4a6e;--line-hi:#5a6b96;--muted:#9aa8c4;--shadow:#050810}[39m
+[31m+ *{box-sizing:border-box}[39m
+[31m+ html[data-l=es] [lang=en],html[data-l=en] [lang=es]{display:none}[39m
+[31m+ /* Estética voxel: sin border-radius, bordes gruesos y sombra dura. */[39m
+[31m+ /* Texto corrido en tipografía de sistema (igual que los paneles del juego):[39m
+[31m+    la versión clásica es casi todo prosa, y en pixel se lee mal. */[39m
+[31m+ body{margin:0;font:15px/1.65 system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background:#0b1020;color:#f1f5f9}[39m
+[31m+ main{max-width:880px;margin:0 auto;padding:2rem 1rem 4rem}[39m
+[31m+ h1,h2,h3{font-family:'Silkscreen','Bebas Neue',monospace;letter-spacing:.06em;line-height:1.25}[39m
+[31m+ h1{font-size:2rem;margin:.2rem 0}[39m
+[31m+ h2{border-bottom:4px solid var(--a);padding-bottom:.4rem;margin-top:2.5rem;font-size:1.15rem}[39m
+[31m+ h3{font-size:1rem;margin:0 0 .3rem}[39m
+[31m+ a{color:var(--a)}[39m
+[31m+ .muted{color:var(--muted)}[39m
+[31m+ .tag{display:inline-block;background:var(--panel2);border:3px solid var(--line);box-shadow:3px 3px 0 var(--shadow);padding:.1rem .5rem;margin:0 .25rem .25rem 0;font-size:.75rem}[39m
+[31m+ article{border:3px solid var(--line);box-shadow:5px 5px 0 var(--shadow);background:var(--panel);padding:1rem;margin:1rem 0}[39m
+[31m+ nav{display:flex;gap:1rem;flex-wrap:wrap;justify-content:space-between;align-items:center}[39m
+[31m+ button{background:var(--a);color:#fff;border:3px solid #fff;box-shadow:5px 5px 0 var(--shadow);padding:.5rem 1rem;font-family:'Silkscreen',monospace;font-weight:700;cursor:pointer}[39m
+[31m+ button:hover{transform:translate(-2px,-2px);box-shadow:7px 7px 0 var(--shadow)}[39m
+[31m+ a.big{display:inline-block;background:var(--a);color:#fff;border:3px solid #fff;box-shadow:5px 5px 0 var(--shadow);padding:.5rem 1rem;text-decoration:none;font-family:'Silkscreen',monospace;font-size:.85rem}[39m
+[31m+ </style>[39m
+[31m+ </head>[39m
+[31m+ <body>[39m
+[31m+ <main>[39m
+[31m+ <nav><a class="big" href="/"><span lang="es">🏀 Jugar la versión interactiva</span><span lang="en">🏀 Play the interactive version</span></a><button id="lang" type="button">EN / ES</button></nav>[39m
+[31m+ <header><h1>Daniel Noya Catoira</h1><p><span lang="es">Desarrollador Full Stack</span><span lang="en">Full Stack Developer</span> · Girona, Catalonia</p></header>[39m
+[31m+[39m
+[31m+ <section id="about"><h2><span lang="es">Sobre mí</span><span lang="en">About me</span></h2><h3><span lang="es">Presentación</span><span lang="en">Introduction</span></h3><p><span lang="es">¡Hola! Soy Daniel, una mente curiosa que disfruta convirtiendo ideas en experiencias interactivas. Soy desarrollador full stack y desarrollador de videojuegos, y ahora estoy inmerso en la IA y la ciencia de datos para hacer mis proyectos más inteligentes y emocionantes</span><span lang="en">Hey! I&#39;m Daniel, a curious mind who loves turning ideas into interactive experiences. I&#39;m a full-stack developer and game developer, currently diving deep into AI and Data Science to make my projects smarter and more exciting.</span></p><h3><span lang="es">Desarrollo web</span><span lang="en">Web development</span></h3><p><span lang="es">Construyo aplicaciones web y plataformas a medida con Laravel y React. En Global Fun Partners he desarrollado y mantenido webs corporativas con WordPress, he creado un portal privado de empresa que agiliza las operaciones internas y he diseñado soluciones a medida para el área privada del CBU Bàsquet Lloret, mejorando la gestión de equipo y los flujos de comunicación</span><span lang="en">I build web apps and custom platforms using Laravel and React. At Global Fun Partners, I have developed and maintained corporate websites with WordPress, created a private company portal to streamline internal operations, and designed tailored solutions for the private area of CBU Bàsquet Lloret, improving team management and communication workflows.</span></p><h3><span lang="es">Videojuegos</span><span lang="en">Games</span></h3><p><span lang="es">Pero donde de verdad me enciendo es trabajando en videojuegos: diseñando mecánicas, creando mundos en Unity o Unreal y dando vida a historias con arte 3D y animaciones. También he trabajado en varios proyectos, tanto personales como durante mis estudios universitarios, que puedes explorar en la sección de obras de esta web</span><span lang="en">But where I really light up is when I&#39;m working on games—designing mechanics, crafting worlds in Unity or Unreal, and bringing stories to life with 3D art and animations. I&#39;ve also worked on several projects, both personal and during my university studies, which you can explore in the Works section of this site.</span></p><h3><span lang="es">Ciberseguridad</span><span lang="en">Cybersecurity</span></h3><p><span lang="es">La ciberseguridad es una de mis pasiones, y dentro de ella el pentesting es lo que más me entusiasma. Soy autodidacta en el área y no dejo de buscar formas de probar, proteger y blindar sistemas. Para mí programar es tan cuestión de creatividad como de ponerme a prueba buscando vulnerabilidades y hacer el software más resiliente</span><span lang="en">Cybersecurity is a personal passion of mine, with a focus on pentesting, which I find especially exciting. I am self-taught in this area and constantly exploring ways to test, secure, and harden systems. For me, programming is as much about creativity as it is about challenging myself to find vulnerabilities and make software more resilient.</span></p><h3><span lang="es">Fuera de la pista</span><span lang="en">Off the court</span></h3><p><span lang="es">Fuera del código, seguramente me encuentres en una pista de baloncesto, experimentando con nuevos conceptos de videojuegos o empapándome de las últimas tendencias en IA, hacking ético y tecnología en general. Me encanta mezclar lo técnico con la creatividad, y siempre busco formas de aprender, crecer y construir proyectos que sean a la vez débutants y con sentido</span><span lang="en">Outside of coding, you&#39;ll probably find me on a basketball court, experimenting with new game concepts, or geeking out about the latest trends in AI, ethical hacking, and tech in general. I love blending technical skills with creativity, and I&#39;m always looking for ways to learn, grow, and build projects that are both fun and meaningful.</span></p></section>[39m
+[31m+[39m
+[31m+ <section id="projects"><h2><span lang="es">Proyectos</span><span lang="en">Projects</span></h2><article><h3>Endless Blue <span class="muted">2025</span></h3><p><span lang="es">Juego 3D hecho como proyecto final del Grado en Desarrollo de Videojuegos de la Universidad de Girona</span><span lang="en">3D Game made as my final project for the Game Development degree at the University of Girona</span></p><p class="muted"><span lang="es">Juego 3D en el que el usuario controla un delfín animado proceduralmente que debe explorar un mapa lleno de enemigos patrulla, NPC y cofres que cuentan una historia sobre la pérdida y el duelo. Es el prototipo inicial que presenté al tribunal, con una nota final de 8/10. Cuenta con un entorno 3D, un delfín con animación procedural y enemigos 3D también animados proceduralmente</span><span lang="en">The game is a 3D game where the user controls a procedurally animated dolphin that has to explore a map filled with patroling enemies, NPCs and chests that tell a story about loss and grieve. This is the initial prototipe I presented to the tribunal and the final mark was a 8/10. The game features a 3D environment, a procedurally 3D animated dolphin and a 3D animated enemies also procedurally animated.</span></p><p><span class="tag">Unity 3D</span><span class="tag">C#</span><span class="tag">Animation</span><span class="tag">Procedural Animations</span></p><p><a href="https://www.dropbox.com/scl/fo/183tykx5fp80v5ckzlqj3/ABlPNYEYd5gpg8wW6rNMoNk?rlkey=3lcq3pfil8c6htlaxgh3q6zfe&amp;st=g58qp7be&amp;dl=0" rel="noopener noreferrer"><span lang="es">Descarga</span><span lang="en">Download</span></a></p></article><article><h3>Endless Runner Game <span class="muted">2023</span></h3><p><span lang="es">Juego de carrera infinita para dispositivos móviles hecho con Unity</span><span lang="en">Endless Runner Game for mobile devices made using Unity</span></p><p class="muted"><span lang="es">Juego de carrera infinita desarrollado para la asignatura de Juegos Móviles de la Universidad de Girona. Usa el sistema móvil de Unity para ofrecer una experiencia móvil sencilla; el objetivo del proyecto era entender los distintos tipos de entrada en Unity para un juego móvil y cómo construir las teselas del mapa infinito para los niveles sin fin</span><span lang="en">Endless Runner Game developed for the Mobile Games subject at the University of Girona. It is a Endless Runner Game. The game uses the Unity Mobile System to deliver a simple mobile experience to the player, this project objective was to understand how Unity works with the Mobile Systems and being able to add those skills to our game developing toolbox.</span></p><p><span class="tag">Unity 3D</span><span class="tag">C#</span><span class="tag">Unity Mobile System</span><span class="tag">Animation</span><span class="tag">Unity Mobile Input</span></p><p><a href="https://drive.google.com/file/d/1LSxJ884z316t4CY6CY7Z4A5J6ZVEB5oz/view?usp=sharing" rel="noopener noreferrer"><span lang="es">Descarga</span><span lang="en">Download</span></a></p></article><article><h3>Multiplayer Simple Game <span class="muted">2023</span></h3><p><span lang="es">Juego multijugador 2D hecho con el sistema multijugador de Unity</span><span lang="en">2D Multiplayer game made using Unity Multiplayer System</span></p><p class="muted"><span lang="es">Pequeño proyecto desarrollado para la asignatura de Desarrollo de Videojuegos Multijugador de la Universidad de Girona. Es un juego multijugador 2D que usa el sistema multijugador de Unity para facilitar la comunicación entre jugadores y servidor. Para construir una comunicación sólida entre clientes y servidor tuve que aprender a usar ese sistema</span><span lang="en">Small project developed for the Multiplayer Game Development subject at the University of Girona. It is a 2D multiplayer game. The game uses the Unity Multiplayer System to ease the multiplayer communication between players &amp; server.</span></p><p><span class="tag">Unity 3D</span><span class="tag">C#</span><span class="tag">Unity Multiplayer System</span><span class="tag">Animation</span></p><p></p></article><article><h3>Godot 2D Plataformer <span class="muted">2022</span></h3><p><span lang="es">Juego de plataformas 2D hecho con Godot y su starter kit de plataformas 2D</span><span lang="en">2D Plataformer game made using Godot and the 2D Plataformer starter kit</span></p><p class="muted"><span lang="es">Juego de plataformas 2D hecho con el motor Godot para ofrecer una experiencia sencilla al jugador; el objetivo del proyecto era entender cómo funciona Godot y cómo se programa con GDScript</span><span lang="en">2D Plataformer Game. It is a 2D Plataformer Game. The game uses the Godot Engine to deliver a simple experience to the player, this project objective was to understand how Godot works.</span></p><p><span class="tag">Godot Engine</span><span class="tag">GDScript</span><span class="tag">2D Systems</span><span class="tag">Animation</span></p><p></p></article><article><h3>Long Live The King <span class="muted">2022</span></h3><p><span lang="es">FPS de arquero con mecánicas de parkour hecho con UE4</span><span lang="en">Archer FPS with parkour mechanics made with UE4</span></p><p class="muted"><span lang="es">Proyecto desarrollado para la asignatura de Desarrollo de Videojuegos de la Universidad de Girona. Es un FPS de arquero con mecánicas de parkour: el jugador puede moverse en todas las direcciones y saltar obstáculos. Me encargué de las mecánicas de arco y flecha y del diseño de niveles</span><span lang="en">Project developed for the Game Development subject at the University of Girona. It is a FPS archer game with parkour mechanics. The player can move in all directions and jump over obstacles.</span></p><p><span class="tag">UE4</span><span class="tag">Blueprint</span><span class="tag">Blender</span><span class="tag">3D Modeling</span><span class="tag">Animation</span><span class="tag">Parkour</span></p><p><a href="https://danoya.itch.io/long-live-the-king" rel="noopener noreferrer"><span lang="es">itch.io</span><span lang="en">itch.io</span></a> · <a href="https://github.com/kimarsal/LongLiveTheKing" rel="noopener noreferrer"><span lang="es">GitHub</span><span lang="en">GitHub</span></a></p></article><article><h3>Sobreviu l&#39;UDG <span class="muted">2022</span></h3><p><span lang="es">Juego de terror y puzles en primera persona hecho con Unity 3D</span><span lang="en">Horror puzzle FPS game made with Unity 3D</span></p><p class="muted"><span lang="es">Juego de terror y puzles en primera persona ambientado en el campus de la UDG. El jugador debe resolver puzles para escapar del campus y encontrar la salida. El juego tiene una atmósfera de terror y una mecánica de resolución de puzles única</span><span lang="en">Horror puzzle FPS game based on the UDG campus. The player must solve puzzles to escape the campus and find the exit. The game features a horror atmosphere and a unique puzzle-solving mechanic.</span></p><p><span class="tag">Unity 3D</span><span class="tag">Blender</span><span class="tag">Substance Painter</span><span class="tag">C#</span><span class="tag">Puzzles</span></p><p><a href="https://danoya.itch.io/sobreviu-ludg" rel="noopener noreferrer"><span lang="es">itch.io</span><span lang="en">itch.io</span></a></p></article><article><h3>VR Game <span class="muted">2022</span></h3><p><span lang="es">Juego de realidad virtual hecho con Unity</span><span lang="en">VR game made using Unity</span></p><p class="muted"><span lang="es">Juego de realidad virtual desarrollado para la asignatura de Realidad Virtual de la Universidad de Girona. Usa el sistema de VR de Unity para ofrecer una experiencia sencilla al jugador; el objetivo del proyecto era entender cómo funciona Unity con los sistemas de VR y poder añadir esas habilidades a mi caja de herramientas de desarrollo</span><span lang="en">VR game developed for the Virtual Reality subject at the University of Girona. It is a VR game. The game uses the Unity VR System to deliver a simple VR experience to the player, this project objective was to understand how Unity works with the VR Systems and being able to add those skills to our game developing toolbox.</span></p><p><span class="tag">Unity 3D</span><span class="tag">C#</span><span class="tag">Unity VR System</span><span class="tag">Animation</span><span class="tag">Unity XR Interaction Toolkit</span></p><p></p></article><article><h3>Dungeon Hunter <span class="muted">2021</span></h3><p><span lang="es">Juego 2.5D hecho con Godot para entender el motor</span><span lang="en">2.5D Game made using Godot to understand the engine</span></p><p class="muted"><span lang="es">Juego 2.5D hecho con el motor Godot para entender cómo funciona; es un juego 2.5D al estilo Diablo de 2 niveles. El diseño del personaje principal lo dibujé entero yo, fotograma a fotograma. Cuenta con un entorno 2.5D, un personaje animado en 2.5D y enemigos 2.5D</span><span lang="en">The game is a 2.5D game made using the Godot engine to allow me to understand how it works, its a 2 level 2.5D Diablo-like game. The main character design is drawn entirelly by me frame by frame. The game features a 2.5D environment, a 2.5D animated character and a 2.5D animated enemies.</span></p><p><span class="tag">Godot</span><span class="tag">GDScript</span><span class="tag">2.5D Videogame</span></p><p></p></article><article><h3>Pinball Godot Game <span class="muted">2021</span></h3><p><span lang="es">Juego de pinball 2D hecho con Godot para entender la física dentro del motor</span><span lang="en">2D Pinball game made using Godot to understand physics inside the engine</span></p><p class="muted"><span lang="es">Juego de pinball 2D en el que el usuario controla una pelota que tiene que rebotar en las palas y romper los bloques. Cuenta con un entorno 2D, una pelota animada en 2D y unas palas también animadas proceduralmente</span><span lang="en">The game is a 2D pinball game where the user controls a ball that has to bounce on the paddles and break the blocks. The game features a 2D environment, a 2D animated ball and a 2D animated paddles also procedurally animated.</span></p><p><span class="tag">Godot</span><span class="tag">GDScript</span><span class="tag">Animation</span><span class="tag">Physics</span></p><p></p></article><article><h3>The Adventures of the Magic Seton <span class="muted">2021</span></h3><p><span lang="es">Juego 2D hecho con Vue.js para entender el framework</span><span lang="en">2D Game made using Vue.js to understand the framework</span></p><p class="muted"><span lang="es">Juego 2D hecho con el framework Vue.js para entender cómo funciona; es un juego de plataformas 2D de 2 niveles, con enemigos y controles limitados. El diseño del personaje principal lo dibujé entero yo, fotograma a fotograma. Cuenta con un entorno 2D, un personaje animado en 2D y enemigos 2D también animados proceduralmente</span><span lang="en">The game is a 2D game made using the Vue.js framework to allow me to understand how it works, its a 2 level 2D plataformer with limited enemeies and controlls. The main character design is drawn entirelly by me frame by frame. The game features a 2D environment, a 2D animated character and a 2D animated enemies also procedurally animated.</span></p><p><span class="tag">Vue.js</span><span class="tag">JavaScript</span><span class="tag">Animation</span><span class="tag">Physics</span></p><p></p></article></section>[39m
+[31m+[39m
+[31m+ <section id="skills"><h2>Skills</h2><h3><span lang="es">Lenguajes de programación</span><span lang="en">Programming languages</span></h3><p><span class="tag">C# 9/10</span><span class="tag">JavaScript 9/10</span><span class="tag">PHP 8/10</span><span class="tag">HTML/CSS 8/10</span><span class="tag">SQL 7/10</span><span class="tag">Python 6/10</span><span class="tag">C++ 5/10</span><span class="tag">Kotlin 3/10</span></p><h3><span lang="es">Frameworks y plataformas</span><span lang="en">Frameworks &amp; platforms</span></h3><p><span class="tag">Laravel 8/10</span><span class="tag">React 8/10</span><span class="tag">WordPress 8/10</span><span class="tag">ServiceNow 8/10</span></p><h3><span lang="es">Motores y herramientas</span><span lang="en">Engines &amp; tools</span></h3><p><span class="tag">Unity 9/10</span><span class="tag">Git 9/10</span><span class="tag">Godot 7/10</span><span class="tag">Unreal Engine 7/10</span><span class="tag">Blender 6/10</span><span class="tag">Substance Painter 5/10</span><span class="tag">Adobe Suite 6/10</span></p><h3><span lang="es">Áreas de desarrollo</span><span lang="en">Development areas</span></h3><p><span class="tag">Game development 9/10</span><span class="tag">Game design 8/10</span><span class="tag">Application development 8/10</span><span class="tag">Software development 8/10</span><span class="tag">Database management 7/10</span><span class="tag">3D modeling 6/10</span><span class="tag">3D animations 6/10</span></p><h3><span lang="es">Ciberseguridad</span><span lang="en">Cybersecurity</span></h3><p><span class="tag">Pentesting 7/10</span><span class="tag">Vulnerability assessment 6/10</span><span class="tag">Security auditing 6/10</span><span class="tag">Metasploit 6/10</span><span class="tag">Nmap 6/10</span><span class="tag">Burp Suite 6/10</span></p><h3><span lang="es">Idiomas</span><span lang="en">Spoken languages</span></h3><p><span class="tag">Español 10/10</span><span class="tag">Gallego 10/10</span><span class="tag">Inglés 10/10</span><span class="tag">Catalán 9/10</span><span class="tag">Italiano 6/10</span></p></section>[39m
+[31m+[39m
+[31m+ <section id="experience"><h2><span lang="es">Experiencia y estudios</span><span lang="en">Experience and education</span></h2><article><h3><span lang="es">Desarrollador Full Stack</span><span lang="en">Full Stack Developer</span></h3><p class="muted">Global Fun Partners · <span lang="es">feb 2025</span><span lang="en">Feb 2025</span> – <span lang="es">Actualidad</span><span lang="en">Present</span></p><p><span lang="es">Desarrollé y mantuve varias webs corporativas con WordPress, cuidando el rendimiento y el diseño responsive. Construí un portal privado de empresa con Laravel (backend) y React (frontend) para agilizar las operaciones internas de una distribuidora nacional de máquinas recreativas. Diseñé e implementé soluciones a medida para el área privada del CBU Bàsquet Lloret, mejorando la gestión de equipo y los flujos de comunicación</span><span lang="en">Developed and maintained multiple corporate websites using WordPress, ensuring performance optimization and responsive design. Built a private company portal using Laravel (backend) and React (frontend) to streamline internal operations for a nationwide amusement machine distribution company. Designed and implemented custom solutions for the private area of CBU Bàsquet Lloret, enhancing team management and communication workflows.</span></p></article><article><h3><span lang="es">Máster en Ciencia de Datos e Inteligencia Artificial</span><span lang="en">Master&#39;s in Data Science and Artificial Intelligence</span></h3><p class="muted">Girona University · <span lang="es">2025</span><span lang="en">2025</span> – <span lang="es">Actualidad</span><span lang="en">Present</span></p><p><span lang="es">Máster en curso en la Universidad de Girona, donde me introduzco a fondo en algoritmos de aprendizaje automático, redes neuronales y técnicas de análisis de datos</span><span lang="en">Currently pursuing a Master in Data Science and Artificial Intelligence at Girona University, diving deep into machine learning algorithms, neural networks and data analysis techniques.</span></p></article><article><h3><span lang="es">Desarrollador de Soluciones de TI</span><span lang="en">IT Solutions Developer</span></h3><p class="muted">Noddon Technology Consulting · <span lang="es">mar 2024</span><span lang="en">Mar 2024</span> – <span lang="es">feb 2025</span><span lang="en">Feb 2025</span></p><p><span lang="es">Desarrollé soluciones de TI para Banco Sabadell. Implementé soluciones de TI con tecnologías ServiceNow y JavaScript. Conocí el funcionamiento interno del sector: flujos de trabajo, despliegues a producción desde entornos de desarrollo, gestión de bases de datos y desarrollo de aplicaciones a partir de ellos</span><span lang="en">Developed IT Solutions for Banco Sabadell. Implemented IT Solutions using ServiceNow + JavaScript technologies. Gained an understanding of the inner workings of the industry, including workflows, production deployments from development environments, database management and application development based on them.</span></p></article><article><h3><span lang="es">Estancia en el extranjero</span><span lang="en">Study Abroad</span></h3><p class="muted">Università degli Studi di Cassino e del Lazio Meridionale · <span lang="es">sep 2022</span><span lang="en">Sep 2022</span> – <span lang="es">feb 2023</span><span lang="en">Feb 2023</span></p><p><span lang="es">Asignaturas cursadas como estudiante de intercambio en la Università degli Studi di Cassino e del Lazio Meridionale, en Cassino (Italia)</span><span lang="en">Study abroad coursework at Università degli Studi di Cassino e del Lazio Meridionale, in Cassino (Italy).</span></p></article><article><h3><span lang="es">Grado en Diseño y Desarrollo de Videojuegos</span><span lang="en">Game Design and Development</span></h3><p class="muted">Girona University · <span lang="es">2019</span><span lang="en">2019</span> – <span lang="es">jun 2025</span><span lang="en">Jun 2025</span></p><p><span lang="es">Grado en Diseño y Desarrollo de Videojuegos con nota media 7/10. Me dio la base en programación, modelado 3D, animación y mecánicas de juego</span><span lang="en">Bachelor degree in Game Design and Development with a GPA of 7/10. It gave me a solid foundation in programming, 3D modeling, animation and game mechanics.</span></p></article><article><h3><span lang="es">Jugador de baloncesto semiprofesional</span><span lang="en">Semi-pro Basketball Player</span></h3><p class="muted">Various locations, Spain / Ireland / Italy · <span lang="es">sep 2017</span><span lang="en">Sep 2017</span> – <span lang="es">Actualidad</span><span lang="en">Present</span></p><p><span lang="es">He jugado en ligas semiprofesionales de baloncesto, con disciplina, trabajo en equipo y pensamiento estratégico. He compaginado entrenamientos intensos y partidos competitivos con las responsabilidades académicas</span><span lang="en">Competed in semi-professional basketball leagues, showcasing discipline, teamwork and strategic thinking. Balanced intensive training schedules and competitive games with academic responsibilities.</span></p></article><article><h3><span lang="es">Profesor voluntario (educación especial)</span><span lang="en">Teacher (Volunteer)</span></h3><p class="muted">St. Patricks Centre · <span lang="es">mar 2017</span><span lang="en">Mar 2017</span> – <span lang="es">abr 2017</span><span lang="en">Apr 2017</span></p><p><span lang="es">Fui voluntario como profesor de alumnado con necesidades educativas especiales en Kilkenny: ayudé a planificar clases, preparé actividades educativas adaptadas y apoyé al alumnado en el desarrollo de habilidades esenciales. Trabajé junto al profesorado para crear un entorno de aprendizaje inclusivo y motivador, fomentando la paciencia, la empatía y la adaptabilidad. Galardonado con los Gaisce Awards del gobierno irlandés por el trabajo voluntario del curso</span><span lang="en">Volunteered as a teacher for special education students in Kilkenny, assisting with lesson planning, delivering tailored educational activities and supporting students in developing essential skills. Worked closely with staff to create an inclusive and engaging learning environment, fostering patience, empathy and adaptability. Awarded Gaisce Awards given by the Irish government for the volunteer work of the school year.</span></p></article><article><h3><span lang="es">Oficial de oficina (voluntario)</span><span lang="en">Office Worker (Volunteer)</span></h3><p class="muted">Irish Defence Forces · <span lang="es">feb 2017</span><span lang="en">Feb 2017</span> – <span lang="es">mar 2017</span><span lang="en">Mar 2017</span></p><p><span lang="es">Asistí al personal administrativo del cuartel militar de Kilkenny en tareas de oficina: organizar y archivar documentación, gestionar registros y facilitar la comunicación entre departamentos. Conocí los flujos de trabajo administrativos de las fuerzas armadas y desarrollé habilidades de organización y trabajo en equipo en un entorno estructurado y disciplinado</span><span lang="en">Assisted administrative personnel in the Kilkenny Army Barracks with various office tasks, including organizing and filing paperwork, managing records and facilitating communication between departments. Gained insight into military administrative workflows and developed organizational and teamwork skills in a structured and disciplined environment.</span></p></article><article><h3><span lang="es">Estancia en el extranjero</span><span lang="en">Study Abroad</span></h3><p class="muted">St Kieran&#39;s College · <span lang="es">sep 2016</span><span lang="en">Sep 2016</span> – <span lang="es">jun 2017</span><span lang="en">Jun 2017</span></p><p><span lang="es">Asignaturas cursadas como estudiante de intercambio en St Kieran’s College, en Kilkenny (Irlanda)</span><span lang="en">Study abroad coursework at St Kieran&#39;s College, in Kilkenny (Ireland).</span></p></article><article><h3><span lang="es">Bachillerato (nota media 8,25/10)</span><span lang="en">Secondary Education (GPA 8.25/10)</span></h3><p class="muted">IES Frei Martín Sarmiento · <span lang="es">sep 2014</span><span lang="en">Sep 2014</span> – <span lang="es">jun 2019</span><span lang="en">Jun 2019</span></p><p><span lang="es">Bachillerato en el IES Frei Martín Sarmiento (Pontevedra) con una nota media de 8,25/10</span><span lang="en">Secondary education at IES Frei Martín Sarmiento (Pontevedra) with a GPA of 8.25/10.</span></p></article><article><h3><span lang="es">Integrante del equipo de debate</span><span lang="en">Debate Team Member</span></h3><p class="muted">Pontevedra, Galicia · <span lang="es">sep 2014</span><span lang="en">Sep 2014</span> – <span lang="es">jun 2019</span><span lang="en">Jun 2019</span></p><p><span lang="es">Representé al centro en debates regionales y nacionales, incluida una sesión en el Parlamento de Galicia. Desarrollé la oratoria, el pensamiento crítico y la comunicación persuasiva, y trabajé en equipo investigando y preparando argumentos</span><span lang="en">Represented the school at regional and national-level debates, including a debate held at the Galician Parliament. Developed public speaking, critical thinking and persuasive communication skills, and collaborated with teammates to research and prepare arguments.</span></p></article></section>[39m
+[31m+[39m
+[31m+ <section id="contact"><h2><span lang="es">Contacto</span><span lang="en">Contact</span></h2><p><a href="mailto:contactdanielnoya@gmail.com">contactdanielnoya@gmail.com</a></p><p><a href="https://www.linkedin.com/in/daniel-noya-catoira/" rel="noopener noreferrer"><span lang="es">LinkedIn</span><span lang="en">LinkedIn</span></a> · <a href="https://x.com/LideGameDev" rel="noopener noreferrer"><span lang="es">X</span><span lang="en">X</span></a> · <a href="https://tryhackme.com/p/Lideiras" rel="noopener noreferrer"><span lang="es">TryHackMe</span><span lang="en">TryHackMe</span></a> · <a href="https://danoya.itch.io/" rel="noopener noreferrer"><span lang="es">itch.io</span><span lang="en">itch.io</span></a></p></section>[39m
+[31m+ </main>[39m
+[31m+ <script>[39m
+[31m+ (function(){var r=document.documentElement,s;try{s=localStorage.getItem('court.lang')}catch(e){}[39m
+[31m+ var l=s||((navigator.language||'es').slice(0,2)==='en'?'en':'es');r.dataset.l=l;r.lang=l;[39m
+[31m+ document.getElementById('lang').onclick=function(){l=l==='es'?'en':'es';r.dataset.l=l;r.lang=l;try{localStorage.setItem('court.lang',l)}catch(e){}}})();[39m
+[31m+ </script>[39m
+[31m+ </body>[39m
+[31m+ </html>[39m
+[31m+[39m
+
+[36m [2m❯[22m tests/paridad-clasica.test.ts:[2m147:68[22m[39m
+    [90m145| [39m    [90m// sale la tarjeta sin título ni imagen si faltan.[39m
+    [90m146| [39m    [35mfor[39m ([35mconst[39m prop [35mof[39m [[32m'og:title'[39m[33m,[39m [32m'og:description'[39m[33m,[39m [32m'og:image'[39m]) {
+    [90m147| [39m      [34mexpect[39m(doc[33m,[39m [32m`falta <meta property="[39m[36m${[39mprop[36m}[39m[32m"> en la clásica`[39m)[33m.[39m[34mtoC[39m…
+    [90m   | [39m                                                                   [31m^[39m
+    [90m148| [39m    }
+    [90m149| [39m  })[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[21/22]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/paridad-clasica.test.ts[2m > [22mAC4 · la clásica sale de `content.ts`, sin recortes[2m > [22mtodo el texto del contenido aparece en el HTML generado
+[31m[1mAssertionError[22m: estos textos de `content.ts` no salen en la clásica: about.highlights[0].label.es, about.highlights[0].label.en, about.highlights[0].value.es, about.highlights[0].value.en, about.highlights[1].label.en, about.highlights[2].label.es, about.highlights[2].label.en: expected [ Array(7) ] to deeply equal [][39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- Array [][39m
+[31m+ Array [[39m
+[31m+   "about.highlights[0].label.es",[39m
+[31m+   "about.highlights[0].label.en",[39m
+[31m+   "about.highlights[0].value.es",[39m
+[31m+   "about.highlights[0].value.en",[39m
+[31m+   "about.highlights[1].label.en",[39m
+[31m+   "about.highlights[2].label.es",[39m
+[31m+   "about.highlights[2].label.en",[39m
+[31m+ ][39m
+
+[36m [2m❯[22m tests/paridad-clasica.test.ts:[2m185:99[22m[39m
+    [90m183| [39m    [35mif[39m ([33m![39mdoc[33m.[39m[34mincludes[39m([33mString[39m([33mMath[39m[33m.[39m[34mmax[39m([33m...[39mcontent[33m.[39mprojects[33m.[39m[34mmap[39m((p) [33m=>[39m p…
+    [90m184| [39m
+    [90m185| [39m    [34mexpect[39m(faltan[33m,[39m [32m`estos textos de \`content.ts\` no salen en la clás[39m…
+    [90m   | [39m                                                                                                  [31m^[39m
+    [90m186| [39m  })[33m;[39m
+    [90m187| [39m})[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22/22]⎯[22m[39m
+
+[2m Test Files [22m [1m[31m5 failed[39m[22m[2m | [22m[1m[32m14 passed[39m[22m[90m (19)[39m
+[2m      Tests [22m [1m[31m22 failed[39m[22m[2m | [22m[1m[32m198 passed[39m[22m[90m (220)[39m
+[2m   Start at [22m 11:25:53
+[2m   Duration [22m 32.78s[2m (transform 1.86s, setup 0ms, collect 5.06s, tests 30.96s, environment 18ms, prepare 6.58s)[22m
+

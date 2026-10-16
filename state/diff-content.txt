@@ -1,0 +1,119 @@
+diff --git a/the-court/src/data/content.ts b/the-court/src/data/content.ts
+index 3fd5dc5..a4d28a9 100644
+--- a/the-court/src/data/content.ts
++++ b/the-court/src/data/content.ts
+@@ -1 +1 @@
+-import type { L10n } from '../i18n';
++import type { L10n, TemaId } from '../i18n';
+@@ -36,0 +37,20 @@ export interface TimelineItem {
++/**
++ * Un tema de «Sobre mí»: el texto va DECLARADO con su tema.
++ *
++ * Antes el reparto era posicional: `panels.ts` decía «el párrafo 0 va con
++ * Presentación, el 1 con Desarrollo web…». Insertar un párrafo por arriba
++ * desplazaba las cinco pestañas sin que saltara nada: «Ciberseguridad» pasaba a
++ * enseñar el texto de videojuegos y no había forma de enterarse. Al bajar, cada
++ * párrafo dice de quién es.
++ */
++export interface AboutTopic {
++  /**
++   * El mismo id que en `TEMAS_ABOUT` (`i18n.ts`), que es donde están las
++   * etiquetas. Es la unión entre el rótulo de la pestaña y su texto, y el tipo
++   * no es `string` a propósito: un id que no exista en el catálogo no compila.
++   */
++  id: TemaId;
++  /** Párrafos del tema, en orden. Hoy hay uno por tema; la lista admite más. */
++  text: L10n[];
++}
++
+@@ -49 +69,12 @@ export interface Content {
+-  about: { paragraphs: L10n[]; highlights: { label: L10n; value: L10n }[] };
++  about: {
++    topics: AboutTopic[];
++    /**
++     * Los mismos párrafos, en lista plana y DERIVADOS de los temas.
++     *
++     * Nadie que dibuje «Sobre mí» debería tener que reagrupar para leer la
++     * prosa (la clásica, el validador), pero el texto EDITABLE es el de
++     * `topics`: duplicarlo aquí a mano son dos copias que divergen.
++     */
++    paragraphs: L10n[];
++    highlights: { label: L10n; value: L10n }[];
++  };
+@@ -61,0 +93,56 @@ export interface Content {
++/*
++ * Los temas de «Sobre mí», con su texto DECLARADO (T3).
++ *
++ * El reparto es por id, no por posición: mover, quitar o añadir un párrafo aquí
++ * dentro ya no puede reetiquetar ninguna pestaña. El orden de las pestañas es el
++ * de `TEMAS_ABOUT` (`i18n.ts`), no el de esta lista, porque el rótulo de cada
++ * tema es texto de interfaz y vive allí.
++ */
++const ABOUT_TOPICS: AboutTopic[] = [
++  {
++    id: 'intro',
++    text: [
++      {
++        es: '¡Hola! Soy Daniel, una mente curiosa que disfruta convirtiendo ideas en experiencias interactivas. Soy desarrollador full stack y desarrollador de videojuegos, y ahora estoy inmerso en la IA y la ciencia de datos para hacer mis proyectos más inteligentes y emocionantes',
++        en: "Hey! I'm Daniel, a curious mind who loves turning ideas into interactive experiences. I'm a full-stack developer and game developer, currently diving deep into AI and Data Science to make my projects smarter and more exciting.",
++      },
++    ],
++  },
++  {
++    id: 'web',
++    text: [
++      {
++        es: 'Construyo aplicaciones web y plataformas a medida con Laravel y React. En Global Fun Partners he desarrollado y mantenido webs corporativas con WordPress, he creado un portal privado de empresa que agiliza las operaciones internas y he diseñado soluciones a medida para el área privada del CBU Bàsquet Lloret, mejorando la gestión de equipo y los flujos de comunicación',
++        en: 'I build web apps and custom platforms using Laravel and React. At Global Fun Partners, I have developed and maintained corporate websites with WordPress, created a private company portal to streamline internal operations, and designed tailored solutions for the private area of CBU Bàsquet Lloret, improving team management and communication workflows.',
++      },
++    ],
++  },
++  {
++    id: 'games',
++    text: [
++      {
++        es: 'Pero donde de verdad me enciendo es trabajando en videojuegos: diseñando mecánicas, creando mundos en Unity o Unreal y dando vida a historias con arte 3D y animaciones. También he trabajado en varios proyectos, tanto personales como durante mis estudios universitarios, que puedes explorar en la sección de obras de esta web',
++        en: "But where I really light up is when I'm working on games—designing mechanics, crafting worlds in Unity or Unreal, and bringing stories to life with 3D art and animations. I've also worked on several projects, both personal and during my university studies, which you can explore in the Works section of this site.",
++      },
++    ],
++  },
++  {
++    id: 'security',
++    text: [
++      {
++        es: 'La ciberseguridad es una de mis pasiones, y dentro de ella el pentesting es lo que más me entusiasma. Soy autodidacta en el área y no dejo de buscar formas de probar, proteger y blindar sistemas. Para mí programar es tan cuestión de creatividad como de ponerme a prueba buscando vulnerabilidades y hacer el software más resiliente',
++        en: 'Cybersecurity is a personal passion of mine, with a focus on pentesting, which I find especially exciting. I am self-taught in this area and constantly exploring ways to test, secure, and harden systems. For me, programming is as much about creativity as it is about challenging myself to find vulnerabilities and make software more resilient.',
++      },
++    ],
++  },
++  {
++    id: 'offcourt',
++    text: [
++      {
++        es: 'Fuera del código, seguramente me encuentres en una pista de baloncesto, experimentando con nuevos conceptos de videojuegos o empapándome de las últimas tendencias en IA, hacking ético y tecnología en general. Me encanta mezclar lo técnico con la creatividad, y siempre busco formas de aprender, crecer y construir proyectos que sean a la vez débutants y con sentido',
++        en: "Outside of coding, you'll probably find me on a basketball court, experimenting with new game concepts, or geeking out about the latest trends in AI, ethical hacking, and tech in general. I love blending technical skills with creativity, and I'm always looking for ways to learn, grow, and build projects that are both fun and meaningful.",
++      },
++    ],
++  },
++];
++
+@@ -80,17 +167,2 @@ export const content: Content = {
+-    paragraphs: [
+-      {
+-        es: '¡Hola! Soy Daniel, una mente curiosa que disfruta convirtiendo ideas en experiencias interactivas. Soy desarrollador full stack y desarrollador de videojuegos, y ahora estoy inmerso en la IA y la ciencia de datos para hacer mis proyectos más inteligentes y emocionantes',
+-        en: "Hey! I'm Daniel, a curious mind who loves turning ideas into interactive experiences. I'm a full-stack developer and game developer, currently diving deep into AI and Data Science to make my projects smarter and more exciting.",
+-      },
+-      {
+-        es: 'Construyo aplicaciones web y plataformas a medida con Laravel y React. En Global Fun Partners he desarrollado y mantenido webs corporativas con WordPress, he creado un portal privado de empresa que agiliza las operaciones internas y he diseñado soluciones a medida para el área privada del CBU Bàsquet Lloret, mejorando la gestión de equipo y los flujos de comunicación',
+-        en: 'I build web apps and custom platforms using Laravel and React. At Global Fun Partners, I have developed and maintained corporate websites with WordPress, created a private company portal to streamline internal operations, and designed tailored solutions for the private area of CBU Bàsquet Lloret, improving team management and communication workflows.',
+-      },
+-      {
+-        es: 'Pero donde de verdad me enciendo es trabajando en videojuegos: diseñando mecánicas, creando mundos en Unity o Unreal y dando vida a historias con arte 3D y animaciones. También he trabajado en varios proyectos, tanto personales como durante mis estudios universitarios, que puedes explorar en la sección de obras de esta web',
+-        en: "But where I really light up is when I'm working on games—designing mechanics, crafting worlds in Unity or Unreal, and bringing stories to life with 3D art and animations. I've also worked on several projects, both personal and during my university studies, which you can explore in the Works section of this site.",
+-      },
+-      {
+-        es: 'La ciberseguridad es una de mis pasiones, y dentro de ella el pentesting es lo que más me entusiasma. Soy autodidacta en el área y no dejo de buscar formas de probar, proteger y blindar sistemas. Para mí programar es tan cuestión de creatividad como de ponerme a prueba buscando vulnerabilidades y hacer el software más resiliente',
+-        en: 'Cybersecurity is a personal passion of mine, with a focus on pentesting, which I find especially exciting. I am self-taught in this area and constantly exploring ways to test, secure, and harden systems. For me, programming is as much about creativity as it is about challenging myself to find vulnerabilities and make software more resilient.',
+-      },
++    topics: ABOUT_TOPICS,
++    /* BORRAR */

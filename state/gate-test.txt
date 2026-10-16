@@ -1,0 +1,48 @@
+
+> the-court@1.0.0 test
+> vitest run
+
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mD:/PROYECTOS/lideiras.github.io/the-court[39m
+
+ [32m✓[39m tests/contest.test.ts [2m([22m[2m22 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m tests/collide.test.ts [2m([22m[2m17 tests[22m[2m)[22m[90m 212[2mms[22m[39m
+ [32m✓[39m tests/dunk.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m tests/fireTrail.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m tests/shot.test.ts [2m([22m[2m22 tests[22m[2m)[22m[90m 31[2mms[22m[39m
+ [32m✓[39m tests/ball.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 24[2mms[22m[39m
+ [32m✓[39m tests/commentary.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m tests/camera.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m tests/i18n.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+ [32m✓[39m tests/jump.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 48[2mms[22m[39m
+ [32m✓[39m tests/court.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m tests/human.test.ts [2m([22m[2m34 tests[22m[2m)[22m[33m 16335[2mms[22m[39m
+   [33m[2m✓[22m[39m inclinacion al moverse[2m > [22mquieto: el torso queda vertical [33m800[2mms[22m[39m
+   [33m[2m✓[22m[39m inclinacion al moverse[2m > [22mcorriendo: el torso se echa hacia delante [33m734[2mms[22m[39m
+   [33m[2m✓[22m[39m inclinacion al moverse[2m > [22mes proporcional a la velocidad: medio paso = media inclinacion [33m1201[2mms[22m[39m
+   [33m[2m✓[22m[39m inclinacion al moverse[2m > [22men el aire se atenua: no hay apoyo desde el que empujarse [33m1024[2mms[22m[39m
+   [33m[2m✓[22m[39m inclinacion al moverse[2m > [22mla cabeza avanza con el torso: inclinacion, no torsión [33m1010[2mms[22m[39m
+   [33m[2m✓[22m[39m inclinacion al moverse[2m > [22mlas piernas NO se inclinan con el torso [33m935[2mms[22m[39m
+   [33m[2m✓[22m[39m regresion: las poses existentes siguen mandando[2m > [22mposeShoot sigue retiring el torso por su cuenta [33m434[2mms[22m[39m
+   [33m[2m✓[22m[39m regresion: las poses existentes siguen mandando[2m > [22mposeCelebrate no pisa la inclinacion [33m472[2mms[22m[39m
+   [33m[2m✓[22m[39m continuidad de pose: recoger el balón[2m > [22mal recoger el balón los brazos NO dan ningún salto [33m455[2mms[22m[39m
+   [33m[2m✓[22m[39m continuidad de pose: recoger el balón[2m > [22mel salto que había antes lo cogía este test (control) [33m512[2mms[22m[39m
+   [33m[2m✓[22m[39m continuidad de pose: recoger el balón[2m > [22mtras el gesto de recoger, los brazos vuelven a la pose base [33m843[2mms[22m[39m
+   [33m[2m✓[22m[39m continuidad de pose: las poses se mezclan, no se imponen[2m > [22mposeShoot con peso 0 no toca ningún hueso [33m467[2mms[22m[39m
+   [33m[2m✓[22m[39m continuidad de pose: las poses se mezclan, no se imponen[2m > [22mposeCelebrate con peso 0 no toca ningún hueso [33m421[2mms[22m[39m
+   [33m[2m✓[22m[39m continuidad de pose: las poses se mezclan, no se imponen[2m > [22mcon peso 1 la pose sigue mandando (regresión de las poses viejas) [33m430[2mms[22m[39m
+   [33m[2m✓[22m[39m continuidad de pose: las poses se mezclan, no se imponen[2m > [22mcargar y soltar el tiro no produce saltos de brazo [33m487[2mms[22m[39m
+   [33m[2m✓[22m[39m regate: el brazo y el balón comparten fase[2m > [22mel brazo empuja CUANDO el balón toca el suelo, no cuando está arriba [33m557[2mms[22m[39m
+   [33m[2m✓[22m[39m gestos por distancia: mate y tiro lejano[2m > [22mposeDunk con peso 0 no toca ningún hueso [33m477[2mms[22m[39m
+   [33m[2m✓[22m[39m gestos por distancia: mate y tiro lejano[2m > [22mposeLejano con peso 0 no toca ningún hueso [33m491[2mms[22m[39m
+   [33m[2m✓[22m[39m gestos por distancia: mate y tiro lejano[2m > [22mlos tres gestos con peso 1 son DISTINTOS entre sí [33m2449[2mms[22m[39m
+   [33m[2m✓[22m[39m corte: el cuerpo se inclina hacia dentro del giro[2m > [22msin corte no hay inclinación lateral ni se queda residuo [33m404[2mms[22m[39m
+   [33m[2m✓[22m[39m corte: el cuerpo se inclina hacia dentro del giro[2m > [22mla inclinación va hacia el lado del giro, no siempre al mismo [33m427[2mms[22m[39m
+   [33m[2m✓[22m[39m corte: el cuerpo se inclina hacia dentro del giro[2m > [22mel corte NO toca las piernas ni inclina hacia delante [33m826[2mms[22m[39m
+   [33m[2m✓[22m[39m geometria de referencia (sin animacion)[2m > [22mel torso no se ha movido de sitio al colgarlo del pivote [33m392[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m12 passed[39m[22m[90m (12)[39m
+[2m      Tests [22m [1m[32m163 passed[39m[22m[90m (163)[39m
+[2m   Start at [22m 09:22:05
+[2m   Duration [22m 19.77s[2m (transform 1.13s, setup 0ms, collect 3.26s, tests 16.73s, environment 4ms, prepare 5.01s)[22m
+

@@ -1,0 +1,192 @@
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mD:/PROYECTOS/lideiras.github.io/the-court[39m
+
+ [32m✓[39m tests/about-temas.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+[90mstdout[2m | tests/guardas-contenido.test.ts
+[22m[39m✓ content.ts válido (10 proyectos, 6 grupos de skills, 11 hitos)
+
+ [31m❯[39m tests/guardas-contenido.test.ts [2m([22m[2m11 tests[22m[2m | [22m[31m11 failed[39m[2m)[22m[90m 26[2mms[22m[39m
+[31m   [31m×[31m T10 · las guardas del contenido rechazan lo que no puede pasar[2m > [22mel contenido real pasa sus propias guardas[90m 9[2mms[22m[31m[39m
+[31m     → scripts/validate-content.ts no exporta la comprobación del contenido. Sin una función que reciba un `content` cualquiera, las guardas de T10 no se pueden comprobar con test: hay que exportarla.[39m
+[31m   [31m×[31m T10 · las guardas del contenido rechazan lo que no puede pasar[2m > [22mrechaza un nivel de skill fuera de 1-10[90m 2[2mms[22m[31m[39m
+[31m     → scripts/validate-content.ts no exporta la comprobación del contenido. Sin una función que reciba un `content` cualquiera, las guardas de T10 no se pueden comprobar con test: hay que exportarla.[39m
+[31m   [31m×[31m T10 · las guardas del contenido rechazan lo que no puede pasar[2m > [22mrechaza un nivel por debajo de 1[90m 1[2mms[22m[31m[39m
+[31m     → scripts/validate-content.ts no exporta la comprobación del contenido. Sin una función que reciba un `content` cualquiera, las guardas de T10 no se pueden comprobar con test: hay que exportarla.[39m
+[31m   [31m×[31m T10 · las guardas del contenido rechazan lo que no puede pasar[2m > [22mrechaza un grupo de skills vacío[90m 1[2mms[22m[31m[39m
+[31m     → scripts/validate-content.ts no exporta la comprobación del contenido. Sin una función que reciba un `content` cualquiera, las guardas de T10 no se pueden comprobar con test: hay que exportarla.[39m
+[31m   [31m×[31m T10 · las guardas del contenido rechazan lo que no puede pasar[2m > [22mrechaza un proyecto sin título[90m 1[2mms[22m[31m[39m
+[31m     → scripts/validate-content.ts no exporta la comprobación del contenido. Sin una función que reciba un `content` cualquiera, las guardas de T10 no se pueden comprobar con test: hay que exportarla.[39m
+[31m   [31m×[31m T10 · las guardas del contenido rechazan lo que no puede pasar[2m > [22mrechaza un tema de `about` sin texto[90m 2[2mms[22m[31m[39m
+[31m     → scripts/validate-content.ts no exporta la comprobación del contenido. Sin una función que reciba un `content` cualquiera, las guardas de T10 no se pueden comprobar con test: hay que exportarla.[39m
+[31m   [31m×[31m T10 · las guardas del contenido rechazan lo que no puede pasar[2m > [22mrechaza ids duplicados en los temas de `about`[90m 1[2mms[22m[31m[39m
+[31m     → scripts/validate-content.ts no exporta la comprobación del contenido. Sin una función que reciba un `content` cualquiera, las guardas de T10 no se pueden comprobar con test: hay que exportarla.[39m
+[31m   [31m×[31m T3 · el validador nombra el tema que se queda sin párrafo[2m > [22mavisa cuando un tema declarado no tiene ningún párrafo[90m 1[2mms[22m[31m[39m
+[31m     → scripts/validate-content.ts no exporta la comprobación del contenido. Sin una función que reciba un `content` cualquiera, las guardas de T10 no se pueden comprobar con test: hay que exportarla.[39m
+[31m   [31m×[31m T10 · en --strict salen las reglas de longitud[2m > [22mrechaza un resumen de más de 200 caracteres[90m 4[2mms[22m[31m[39m
+[31m     → scripts/validate-content.ts no exporta la comprobación del contenido. Sin una función que reciba un `content` cualquiera, las guardas de T10 no se pueden comprobar con test: hay que exportarla.[39m
+[31m   [31m×[31m T10 · en --strict salen las reglas de longitud[2m > [22mrechaza detalles de más de 600 caracteres[90m 1[2mms[22m[31m[39m
+[31m     → scripts/validate-content.ts no exporta la comprobación del contenido. Sin una función que reciba un `content` cualquiera, las guardas de T10 no se pueden comprobar con test: hay que exportarla.[39m
+[31m   [31m×[31m T10 · en --strict salen las reglas de longitud[2m > [22mrechaza un párrafo de más de 700 caracteres sin punto final[90m 1[2mms[22m[31m[39m
+[31m     → scripts/validate-content.ts no exporta la comprobación del contenido. Sin una función que reciba un `content` cualquiera, las guardas de T10 no se pueden comprobar con test: hay que exportarla.[39m
+
+[31m⎯⎯⎯⎯⎯⎯[1m[7m Failed Tests 11 [27m[22m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/guardas-contenido.test.ts[2m > [22mT10 · las guardas del contenido rechazan lo que no puede pasar[2m > [22mel contenido real pasa sus propias guardas
+[31m[1mError[22m: scripts/validate-content.ts no exporta la comprobación del contenido. Sin una función que reciba un `content` cualquiera, las guardas de T10 no se pueden comprobar con test: hay que exportarla.[39m
+[36m [2m❯[22m buscarValidador tests/guardas-contenido.test.ts:[2m31:9[22m[39m
+    [90m 29| [39m    [35mif[39m ([35mtypeof[39m v [33m===[39m [32m'function'[39m) [35mreturn[39m v [35mas[39m [33mFnValidar[39m[33m;[39m
+    [90m 30| [39m  }
+    [90m 31| [39m  [35mthrow[39m [35mnew[39m [33mError[39m(
+    [90m   | [39m        [31m^[39m
+    [90m 32| [39m    [32m'scripts/validate-content.ts no exporta la comprobación del conten[39m…
+    [90m 33| [39m      [32m'`content` cualquiera, las guardas de T10 no se pueden comprobar[39m…
+[90m [2m❯[22m erroresDe tests/guardas-contenido.test.ts:[2m56:14[22m[39m
+[90m [2m❯[22m tests/guardas-contenido.test.ts:[2m117:21[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/11]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/guardas-contenido.test.ts[2m > [22mT10 · las guardas del contenido rechazan lo que no puede pasar[2m > [22mrechaza un nivel de skill fuera de 1-10
+[31m[1mError[22m: scripts/validate-content.ts no exporta la comprobación del contenido. Sin una función que reciba un `content` cualquiera, las guardas de T10 no se pueden comprobar con test: hay que exportarla.[39m
+[36m [2m❯[22m buscarValidador tests/guardas-contenido.test.ts:[2m31:9[22m[39m
+    [90m 29| [39m    [35mif[39m ([35mtypeof[39m v [33m===[39m [32m'function'[39m) [35mreturn[39m v [35mas[39m [33mFnValidar[39m[33m;[39m
+    [90m 30| [39m  }
+    [90m 31| [39m  [35mthrow[39m [35mnew[39m [33mError[39m(
+    [90m   | [39m        [31m^[39m
+    [90m 32| [39m    [32m'scripts/validate-content.ts no exporta la comprobación del conten[39m…
+    [90m 33| [39m      [32m'`content` cualquiera, las guardas de T10 no se pueden comprobar[39m…
+[90m [2m❯[22m erroresDe tests/guardas-contenido.test.ts:[2m56:14[22m[39m
+[90m [2m❯[22m tests/guardas-contenido.test.ts:[2m124:21[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/11]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/guardas-contenido.test.ts[2m > [22mT10 · las guardas del contenido rechazan lo que no puede pasar[2m > [22mrechaza un nivel por debajo de 1
+[31m[1mError[22m: scripts/validate-content.ts no exporta la comprobación del contenido. Sin una función que reciba un `content` cualquiera, las guardas de T10 no se pueden comprobar con test: hay que exportarla.[39m
+[36m [2m❯[22m buscarValidador tests/guardas-contenido.test.ts:[2m31:9[22m[39m
+    [90m 29| [39m    [35mif[39m ([35mtypeof[39m v [33m===[39m [32m'function'[39m) [35mreturn[39m v [35mas[39m [33mFnValidar[39m[33m;[39m
+    [90m 30| [39m  }
+    [90m 31| [39m  [35mthrow[39m [35mnew[39m [33mError[39m(
+    [90m   | [39m        [31m^[39m
+    [90m 32| [39m    [32m'scripts/validate-content.ts no exporta la comprobación del conten[39m…
+    [90m 33| [39m      [32m'`content` cualquiera, las guardas de T10 no se pueden comprobar[39m…
+[90m [2m❯[22m erroresDe tests/guardas-contenido.test.ts:[2m56:14[22m[39m
+[90m [2m❯[22m tests/guardas-contenido.test.ts:[2m132:12[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/11]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/guardas-contenido.test.ts[2m > [22mT10 · las guardas del contenido rechazan lo que no puede pasar[2m > [22mrechaza un grupo de skills vacío
+[31m[1mError[22m: scripts/validate-content.ts no exporta la comprobación del contenido. Sin una función que reciba un `content` cualquiera, las guardas de T10 no se pueden comprobar con test: hay que exportarla.[39m
+[36m [2m❯[22m buscarValidador tests/guardas-contenido.test.ts:[2m31:9[22m[39m
+    [90m 29| [39m    [35mif[39m ([35mtypeof[39m v [33m===[39m [32m'function'[39m) [35mreturn[39m v [35mas[39m [33mFnValidar[39m[33m;[39m
+    [90m 30| [39m  }
+    [90m 31| [39m  [35mthrow[39m [35mnew[39m [33mError[39m(
+    [90m   | [39m        [31m^[39m
+    [90m 32| [39m    [32m'scripts/validate-content.ts no exporta la comprobación del conten[39m…
+    [90m 33| [39m      [32m'`content` cualquiera, las guardas de T10 no se pueden comprobar[39m…
+[90m [2m❯[22m erroresDe tests/guardas-contenido.test.ts:[2m56:14[22m[39m
+[90m [2m❯[22m tests/guardas-contenido.test.ts:[2m138:12[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/11]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/guardas-contenido.test.ts[2m > [22mT10 · las guardas del contenido rechazan lo que no puede pasar[2m > [22mrechaza un proyecto sin título
+[31m[1mError[22m: scripts/validate-content.ts no exporta la comprobación del contenido. Sin una función que reciba un `content` cualquiera, las guardas de T10 no se pueden comprobar con test: hay que exportarla.[39m
+[36m [2m❯[22m buscarValidador tests/guardas-contenido.test.ts:[2m31:9[22m[39m
+    [90m 29| [39m    [35mif[39m ([35mtypeof[39m v [33m===[39m [32m'function'[39m) [35mreturn[39m v [35mas[39m [33mFnValidar[39m[33m;[39m
+    [90m 30| [39m  }
+    [90m 31| [39m  [35mthrow[39m [35mnew[39m [33mError[39m(
+    [90m   | [39m        [31m^[39m
+    [90m 32| [39m    [32m'scripts/validate-content.ts no exporta la comprobación del conten[39m…
+    [90m 33| [39m      [32m'`content` cualquiera, las guardas de T10 no se pueden comprobar[39m…
+[90m [2m❯[22m erroresDe tests/guardas-contenido.test.ts:[2m56:14[22m[39m
+[90m [2m❯[22m tests/guardas-contenido.test.ts:[2m144:12[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/11]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/guardas-contenido.test.ts[2m > [22mT10 · las guardas del contenido rechazan lo que no puede pasar[2m > [22mrechaza un tema de `about` sin texto
+[31m[1mError[22m: scripts/validate-content.ts no exporta la comprobación del contenido. Sin una función que reciba un `content` cualquiera, las guardas de T10 no se pueden comprobar con test: hay que exportarla.[39m
+[36m [2m❯[22m buscarValidador tests/guardas-contenido.test.ts:[2m31:9[22m[39m
+    [90m 29| [39m    [35mif[39m ([35mtypeof[39m v [33m===[39m [32m'function'[39m) [35mreturn[39m v [35mas[39m [33mFnValidar[39m[33m;[39m
+    [90m 30| [39m  }
+    [90m 31| [39m  [35mthrow[39m [35mnew[39m [33mError[39m(
+    [90m   | [39m        [31m^[39m
+    [90m 32| [39m    [32m'scripts/validate-content.ts no exporta la comprobación del conten[39m…
+    [90m 33| [39m      [32m'`content` cualquiera, las guardas de T10 no se pueden comprobar[39m…
+[90m [2m❯[22m erroresDe tests/guardas-contenido.test.ts:[2m56:14[22m[39m
+[90m [2m❯[22m tests/guardas-contenido.test.ts:[2m153:12[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/11]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/guardas-contenido.test.ts[2m > [22mT10 · las guardas del contenido rechazan lo que no puede pasar[2m > [22mrechaza ids duplicados en los temas de `about`
+[31m[1mError[22m: scripts/validate-content.ts no exporta la comprobación del contenido. Sin una función que reciba un `content` cualquiera, las guardas de T10 no se pueden comprobar con test: hay que exportarla.[39m
+[36m [2m❯[22m buscarValidador tests/guardas-contenido.test.ts:[2m31:9[22m[39m
+    [90m 29| [39m    [35mif[39m ([35mtypeof[39m v [33m===[39m [32m'function'[39m) [35mreturn[39m v [35mas[39m [33mFnValidar[39m[33m;[39m
+    [90m 30| [39m  }
+    [90m 31| [39m  [35mthrow[39m [35mnew[39m [33mError[39m(
+    [90m   | [39m        [31m^[39m
+    [90m 32| [39m    [32m'scripts/validate-content.ts no exporta la comprobación del conten[39m…
+    [90m 33| [39m      [32m'`content` cualquiera, las guardas de T10 no se pueden comprobar[39m…
+[90m [2m❯[22m erroresDe tests/guardas-contenido.test.ts:[2m56:14[22m[39m
+[90m [2m❯[22m tests/guardas-contenido.test.ts:[2m168:21[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/11]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/guardas-contenido.test.ts[2m > [22mT3 · el validador nombra el tema que se queda sin párrafo[2m > [22mavisa cuando un tema declarado no tiene ningún párrafo
+[31m[1mError[22m: scripts/validate-content.ts no exporta la comprobación del contenido. Sin una función que reciba un `content` cualquiera, las guardas de T10 no se pueden comprobar con test: hay que exportarla.[39m
+[36m [2m❯[22m buscarValidador tests/guardas-contenido.test.ts:[2m31:9[22m[39m
+    [90m 29| [39m    [35mif[39m ([35mtypeof[39m v [33m===[39m [32m'function'[39m) [35mreturn[39m v [35mas[39m [33mFnValidar[39m[33m;[39m
+    [90m 30| [39m  }
+    [90m 31| [39m  [35mthrow[39m [35mnew[39m [33mError[39m(
+    [90m   | [39m        [31m^[39m
+    [90m 32| [39m    [32m'scripts/validate-content.ts no exporta la comprobación del conten[39m…
+    [90m 33| [39m      [32m'`content` cualquiera, las guardas de T10 no se pueden comprobar[39m…
+[90m [2m❯[22m erroresDe tests/guardas-contenido.test.ts:[2m56:14[22m[39m
+[90m [2m❯[22m tests/guardas-contenido.test.ts:[2m185:21[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/11]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/guardas-contenido.test.ts[2m > [22mT10 · en --strict salen las reglas de longitud[2m > [22mrechaza un resumen de más de 200 caracteres
+[31m[1mError[22m: scripts/validate-content.ts no exporta la comprobación del contenido. Sin una función que reciba un `content` cualquiera, las guardas de T10 no se pueden comprobar con test: hay que exportarla.[39m
+[36m [2m❯[22m buscarValidador tests/guardas-contenido.test.ts:[2m31:9[22m[39m
+    [90m 29| [39m    [35mif[39m ([35mtypeof[39m v [33m===[39m [32m'function'[39m) [35mreturn[39m v [35mas[39m [33mFnValidar[39m[33m;[39m
+    [90m 30| [39m  }
+    [90m 31| [39m  [35mthrow[39m [35mnew[39m [33mError[39m(
+    [90m   | [39m        [31m^[39m
+    [90m 32| [39m    [32m'scripts/validate-content.ts no exporta la comprobación del conten[39m…
+    [90m 33| [39m      [32m'`content` cualquiera, las guardas de T10 no se pueden comprobar[39m…
+[90m [2m❯[22m erroresDe tests/guardas-contenido.test.ts:[2m56:14[22m[39m
+[90m [2m❯[22m tests/guardas-contenido.test.ts:[2m197:12[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/11]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/guardas-contenido.test.ts[2m > [22mT10 · en --strict salen las reglas de longitud[2m > [22mrechaza detalles de más de 600 caracteres
+[31m[1mError[22m: scripts/validate-content.ts no exporta la comprobación del contenido. Sin una función que reciba un `content` cualquiera, las guardas de T10 no se pueden comprobar con test: hay que exportarla.[39m
+[36m [2m❯[22m buscarValidador tests/guardas-contenido.test.ts:[2m31:9[22m[39m
+    [90m 29| [39m    [35mif[39m ([35mtypeof[39m v [33m===[39m [32m'function'[39m) [35mreturn[39m v [35mas[39m [33mFnValidar[39m[33m;[39m
+    [90m 30| [39m  }
+    [90m 31| [39m  [35mthrow[39m [35mnew[39m [33mError[39m(
+    [90m   | [39m        [31m^[39m
+    [90m 32| [39m    [32m'scripts/validate-content.ts no exporta la comprobación del conten[39m…
+    [90m 33| [39m      [32m'`content` cualquiera, las guardas de T10 no se pueden comprobar[39m…
+[90m [2m❯[22m erroresDe tests/guardas-contenido.test.ts:[2m56:14[22m[39m
+[90m [2m❯[22m tests/guardas-contenido.test.ts:[2m203:12[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/11]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m tests/guardas-contenido.test.ts[2m > [22mT10 · en --strict salen las reglas de longitud[2m > [22mrechaza un párrafo de más de 700 caracteres sin punto final
+[31m[1mError[22m: scripts/validate-content.ts no exporta la comprobación del contenido. Sin una función que reciba un `content` cualquiera, las guardas de T10 no se pueden comprobar con test: hay que exportarla.[39m
+[36m [2m❯[22m buscarValidador tests/guardas-contenido.test.ts:[2m31:9[22m[39m
+    [90m 29| [39m    [35mif[39m ([35mtypeof[39m v [33m===[39m [32m'function'[39m) [35mreturn[39m v [35mas[39m [33mFnValidar[39m[33m;[39m
+    [90m 30| [39m  }
+    [90m 31| [39m  [35mthrow[39m [35mnew[39m [33mError[39m(
+    [90m   | [39m        [31m^[39m
+    [90m 32| [39m    [32m'scripts/validate-content.ts no exporta la comprobación del conten[39m…
+    [90m 33| [39m      [32m'`content` cualquiera, las guardas de T10 no se pueden comprobar[39m…
+[90m [2m❯[22m erroresDe tests/guardas-contenido.test.ts:[2m56:14[22m[39m
+[90m [2m❯[22m tests/guardas-contenido.test.ts:[2m209:12[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/11]⎯[22m[39m
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m1 passed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[31m11 failed[39m[22m[2m | [22m[1m[32m6 passed[39m[22m[90m (17)[39m
+[2m   Start at [22m 11:06:17
+[2m   Duration [22m 1.31s[2m (transform 581ms, setup 0ms, collect 575ms, tests 37ms, environment 1ms, prepare 892ms)[22m
+

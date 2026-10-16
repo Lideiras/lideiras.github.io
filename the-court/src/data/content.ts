@@ -1,4 +1,4 @@
-import type { L10n } from '../i18n';
+import type { L10n, TemaId } from '../i18n';
 
 export type SectionId = 'projects' | 'skills' | 'about' | 'experience' | 'contact' | 'stats';
 
@@ -21,7 +21,7 @@ export interface Project {
 export interface SkillGroup {
   id: string;
   name: L10n;
-  items: { name: string; level: SkillLevel }[];
+  items: { name: L10n; level: SkillLevel }[];
 }
 
 export interface TimelineItem {
@@ -34,11 +34,32 @@ export interface TimelineItem {
   description: L10n;
 }
 
+/**
+ * Un tema de «Sobre mí»: el texto va DECLARADO con su tema.
+ *
+ * Antes el reparto era posicional: `panels.ts` decía «el párrafo 0 va con
+ * Presentación, el 1 con Desarrollo web…». Insertar un párrafo por arriba
+ * desplazaba las cinco pestañas sin que saltara nada: «Ciberseguridad» pasaba a
+ * enseñar el texto de videojuegos y no había forma de enterarse. Al bajar, cada
+ * párrafo dice de quién es.
+ */
+export interface AboutTopic {
+  /**
+   * El mismo id que en `TEMAS_ABOUT` (`i18n.ts`), que es donde están las
+   * etiquetas. Es la unión entre el rótulo de la pestaña y su texto, y el tipo
+   * no es `string` a propósito: un id que no exista en el catálogo no compila.
+   */
+  id: TemaId;
+  /** Párrafos del tema, en orden. Hoy hay uno por tema; la lista admite más. */
+  text: L10n[];
+}
+
 export interface Content {
   person: {
     name: string;
     initials: string;
     jerseyNumber: string;
+    birthDate?: string;
     role: L10n;
     /** Opcional por decisión del propietario: no quiere tagline. */
     tagline?: L10n;
@@ -46,7 +67,18 @@ export interface Content {
     email: string;
     social: Link[];
   };
-  about: { paragraphs: L10n[]; highlights: { label: L10n; value: L10n }[] };
+  about: {
+    topics: AboutTopic[];
+    /**
+     * Los mismos párrafos, en lista plana y DERIVADOS de los temas.
+     *
+     * Nadie que dibuje «Sobre mí» debería tener que reagrupar para leer la
+     * prosa (la clásica, el validador), pero el texto EDITABLE es el de
+     * `topics`: duplicarlo aquí a mano son dos copias que divergen.
+     */
+    paragraphs: L10n[];
+    highlights: { label: L10n; value: L10n }[];
+  };
   projects: Project[];
   skills: SkillGroup[];
   timeline: TimelineItem[];
@@ -59,11 +91,68 @@ export interface Content {
  * Los textos que el propietario aún no ha aprobado llevan .
  * ------------------------------------------------------------------------- */
 
+/*
+ * Los temas de «Sobre mí», con su texto DECLARADO (T3).
+ *
+ * El reparto es por id, no por posición: mover, quitar o añadir un párrafo aquí
+ * dentro ya no puede reetiquetar ninguna pestaña. El orden de las pestañas es el
+ * de `TEMAS_ABOUT` (`i18n.ts`), no el de esta lista, porque el rótulo de cada
+ * tema es texto de interfaz y vive allí.
+ */
+const ABOUT_TOPICS: AboutTopic[] = [
+  {
+    id: 'intro',
+    text: [
+      {
+        es: '¡Hola! Soy Daniel, una mente curiosa que disfruta convirtiendo ideas en experiencias interactivas. Soy desarrollador full stack y desarrollador de videojuegos, y ahora estoy inmerso en la IA y la ciencia de datos para hacer mis proyectos más inteligentes y emocionantes',
+        en: "Hey! I'm Daniel, a curious mind who loves turning ideas into interactive experiences. I'm a full-stack developer and game developer, currently diving deep into AI and Data Science to make my projects smarter and more exciting.",
+      },
+    ],
+  },
+  {
+    id: 'web',
+    text: [
+      {
+        es: 'Construyo aplicaciones web y plataformas a medida con Laravel y React. En Global Fun Partners he desarrollado y mantenido webs corporativas con WordPress, he creado un portal privado de empresa que agiliza las operaciones internas y he diseñado soluciones a medida para el área privada del CBU Bàsquet Lloret, mejorando la gestión de equipo y los flujos de comunicación',
+        en: 'I build web apps and custom platforms using Laravel and React. At Global Fun Partners, I have developed and maintained corporate websites with WordPress, created a private company portal to streamline internal operations, and designed tailored solutions for the private area of CBU Bàsquet Lloret, improving team management and communication workflows.',
+      },
+    ],
+  },
+  {
+    id: 'games',
+    text: [
+      {
+        es: 'Pero donde de verdad me enciendo es trabajando en videojuegos: diseñando mecánicas, creando mundos en Unity o Unreal y dando vida a historias con arte 3D y animaciones. También he trabajado en varios proyectos, tanto personales como durante mis estudios universitarios, que puedes explorar en la sección de obras de esta web',
+        en: "But where I really light up is when I'm working on games—designing mechanics, crafting worlds in Unity or Unreal, and bringing stories to life with 3D art and animations. I've also worked on several projects, both personal and during my university studies, which you can explore in the Works section of this site.",
+      },
+    ],
+  },
+  {
+    id: 'security',
+    text: [
+      {
+        es: 'La ciberseguridad es una de mis pasiones, y dentro de ella el pentesting es lo que más me entusiasma. Soy autodidacta en el área y no dejo de buscar formas de probar, proteger y blindar sistemas. Para mí programar es tan cuestión de creatividad como de ponerme a prueba buscando vulnerabilidades y hacer el software más resiliente',
+        en: 'Cybersecurity is a personal passion of mine, with a focus on pentesting, which I find especially exciting. I am self-taught in this area and constantly exploring ways to test, secure, and harden systems. For me, programming is as much about creativity as it is about challenging myself to find vulnerabilities and make software more resilient.',
+      },
+    ],
+  },
+  {
+    id: 'offcourt',
+    text: [
+      {
+        es: 'Fuera del código, seguramente me encuentres en una pista de baloncesto, experimentando con nuevos conceptos de videojuegos o empapándome de las últimas tendencias en IA, hacking ético y tecnología en general. Me encanta mezclar lo técnico con la creatividad, y siempre busco formas de aprender, crecer y construir proyectos que sean a la vez débutants y con sentido',
+        en: "Outside of coding, you'll probably find me on a basketball court, experimenting with new game concepts, or geeking out about the latest trends in AI, ethical hacking, and tech in general. I love blending technical skills with creativity, and I'm always looking for ways to learn, grow, and build projects that are both fun and meaningful.",
+      },
+    ],
+  },
+];
+
 export const content: Content = {
   person: {
     name: 'Daniel Noya Catoira',
     initials: 'LID',
     jerseyNumber: '23',
+    birthDate: '2001-03-07',
     role: { es: 'Desarrollador Full Stack', en: 'Full Stack Developer' },
     location: 'Girona, Catalonia',
     email: 'contactdanielnoya@gmail.com',
@@ -76,29 +165,8 @@ export const content: Content = {
   },
 
   about: {
-    // Texto original del propietario en inglés; traducción al español pendiente de aprobación.
-    paragraphs: [
-      {
-        es: '¡Hola! Soy Daniel, una mente curiosa que disfruta convirtiendo ideas en experiencias interactivas. Soy desarrollador full stack y desarrollador de videojuegos, y ahora estoy inmerso en la IA y la ciencia de datos para hacer mis proyectos más inteligentes y emocionantes',
-        en: "Hey! I'm Daniel, a curious mind who loves turning ideas into interactive experiences. I'm a full-stack developer and game developer, currently diving deep into AI and Data Science to make my projects smarter and more exciting.",
-      },
-      {
-        es: 'Construyo aplicaciones web y plataformas a medida con Laravel y React. En Global Fun Partners he desarrollado y mantenido webs corporativas con WordPress, he creado un portal privado de empresa que agiliza las operaciones internas y he diseñado soluciones a medida para el área privada del CBU Bàsquet Lloret, mejorando la gestión de equipo y los flujos de comunicación',
-        en: 'I build web apps and custom platforms using Laravel and React. At Global Fun Partners, I have developed and maintained corporate websites with WordPress, created a private company portal to streamline internal operations, and designed tailored solutions for the private area of CBU Bàsquet Lloret, improving team management and communication workflows.',
-      },
-      {
-        es: 'Pero donde de verdad me enciendo es trabajando en videojuegos: diseñando mecánicas, creando mundos en Unity o Unreal y dando vida a historias con arte 3D y animaciones. También he trabajado en varios proyectos, tanto personales como durante mis estudios universitarios, que puedes explorar en la sección de obras de esta web',
-        en: "But where I really light up is when I'm working on games—designing mechanics, crafting worlds in Unity or Unreal, and bringing stories to life with 3D art and animations. I've also worked on several projects, both personal and during my university studies, which you can explore in the Works section of this site.",
-      },
-      {
-        es: 'La ciberseguridad es una de mis pasiones, y dentro de ella el pentesting es lo que más me entusiasma. Soy autodidacta en el área y no dejo de buscar formas de probar, proteger y blindar sistemas. Para mí programar es tan cuestión de creatividad como de ponerme a prueba buscando vulnerabilidades y hacer el software más resiliente',
-        en: 'Cybersecurity is a personal passion of mine, with a focus on pentesting, which I find especially exciting. I am self-taught in this area and constantly exploring ways to test, secure, and harden systems. For me, programming is as much about creativity as it is about challenging myself to find vulnerabilities and make software more resilient.',
-      },
-      {
-        es: 'Fuera del código, seguramente me encuentres en una pista de baloncesto, experimentando con nuevos conceptos de videojuegos o empapándome de las últimas tendencias en IA, hacking ético y tecnología en general. Me encanta mezclar lo técnico con la creatividad, y siempre busco formas de aprender, crecer y construir proyectos que sean a la vez débuter y con sentido',
-        en: "Outside of coding, you'll probably find me on a basketball court, experimenting with new game concepts, or geeking out about the latest trends in AI, ethical hacking, and tech in general. I love blending technical skills with creativity, and I'm always looking for ways to learn, grow, and build projects that are both fun and meaningful.",
-      },
-    ],
+    topics: ABOUT_TOPICS,
+    paragraphs: ABOUT_TOPICS.flatMap((t) => t.text),
     highlights: [
       {
         label: { es: 'En la pista', en: 'On the court' },
@@ -286,73 +354,73 @@ export const content: Content = {
       id: 'languages',
       name: { es: 'Lenguajes de programación', en: 'Programming languages' },
       items: [
-        { name: 'C#', level: 9 },
-        { name: 'JavaScript', level: 9 },
-        { name: 'PHP', level: 8 },
-        { name: 'HTML/CSS', level: 8 },
-        { name: 'SQL', level: 7 },
-        { name: 'Python', level: 6 },
-        { name: 'C++', level: 5 },
-        { name: 'Kotlin', level: 3 },
+        { name: { es: 'C#', en: 'C#' }, level: 9 },
+        { name: { es: 'JavaScript', en: 'JavaScript' }, level: 9 },
+        { name: { es: 'PHP', en: 'PHP' }, level: 8 },
+        { name: { es: 'HTML/CSS', en: 'HTML/CSS' }, level: 8 },
+        { name: { es: 'SQL', en: 'SQL' }, level: 7 },
+        { name: { es: 'Python', en: 'Python' }, level: 6 },
+        { name: { es: 'C++', en: 'C++' }, level: 5 },
+        { name: { es: 'Kotlin', en: 'Kotlin' }, level: 3 },
       ],
     },
     {
       id: 'frameworks',
       name: { es: 'Frameworks y plataformas', en: 'Frameworks & platforms' },
       items: [
-        { name: 'Laravel', level: 8 },
-        { name: 'React', level: 8 },
-        { name: 'WordPress', level: 8 },
-        { name: 'ServiceNow', level: 8 },
+        { name: { es: 'Laravel', en: 'Laravel' }, level: 8 },
+        { name: { es: 'React', en: 'React' }, level: 8 },
+        { name: { es: 'WordPress', en: 'WordPress' }, level: 8 },
+        { name: { es: 'ServiceNow', en: 'ServiceNow' }, level: 8 },
       ],
     },
     {
       id: 'engines',
       name: { es: 'Motores y herramientas', en: 'Engines & tools' },
       items: [
-        { name: 'Unity', level: 9 },
-        { name: 'Git', level: 9 },
-        { name: 'Godot', level: 7 },
-        { name: 'Unreal Engine', level: 7 },
-        { name: 'Blender', level: 6 },
-        { name: 'Substance Painter', level: 5 },
-        { name: 'Adobe Suite', level: 6 },
+        { name: { es: 'Unity', en: 'Unity' }, level: 9 },
+        { name: { es: 'Git', en: 'Git' }, level: 9 },
+        { name: { es: 'Godot', en: 'Godot' }, level: 7 },
+        { name: { es: 'Unreal Engine', en: 'Unreal Engine' }, level: 7 },
+        { name: { es: 'Blender', en: 'Blender' }, level: 6 },
+        { name: { es: 'Substance Painter', en: 'Substance Painter' }, level: 5 },
+        { name: { es: 'Adobe Suite', en: 'Adobe Suite' }, level: 6 },
       ],
     },
     {
       id: 'areas',
       name: { es: 'Áreas de desarrollo', en: 'Development areas' },
       items: [
-        { name: 'Game development', level: 9 },
-        { name: 'Game design', level: 8 },
-        { name: 'Application development', level: 8 },
-        { name: 'Software development', level: 8 },
-        { name: 'Database management', level: 7 },
-        { name: '3D modeling', level: 6 },
-        { name: '3D animations', level: 6 },
+        { name: { es: 'Desarrollo de videojuegos', en: 'Game development' }, level: 9 },
+        { name: { es: 'Diseño de juegos', en: 'Game design' }, level: 8 },
+        { name: { es: 'Desarrollo de aplicaciones', en: 'Application development' }, level: 8 },
+        { name: { es: 'Desarrollo de software', en: 'Software development' }, level: 8 },
+        { name: { es: 'Gestión de bases de datos', en: 'Database management' }, level: 7 },
+        { name: { es: 'Modelado 3D', en: '3D modeling' }, level: 6 },
+        { name: { es: 'Animación 3D', en: '3D animations' }, level: 6 },
       ],
     },
     {
       id: 'security',
       name: { es: 'Ciberseguridad', en: 'Cybersecurity' },
       items: [
-        { name: 'Pentesting', level: 7 },
-        { name: 'Vulnerability assessment', level: 6 },
-        { name: 'Security auditing', level: 6 },
-        { name: 'Metasploit', level: 6 },
-        { name: 'Nmap', level: 6 },
-        { name: 'Burp Suite', level: 6 },
+        { name: { es: 'Pentesting', en: 'Pentesting' }, level: 7 },
+        { name: { es: 'Evaluación de vulnerabilidades', en: 'Vulnerability assessment' }, level: 6 },
+        { name: { es: 'Auditoría de seguridad', en: 'Security auditing' }, level: 6 },
+        { name: { es: 'Metasploit', en: 'Metasploit' }, level: 6 },
+        { name: { es: 'Nmap', en: 'Nmap' }, level: 6 },
+        { name: { es: 'Burp Suite', en: 'Burp Suite' }, level: 6 },
       ],
     },
     {
       id: 'spoken',
       name: { es: 'Idiomas', en: 'Spoken languages' },
       items: [
-        { name: 'Español', level: 10 },
-        { name: 'Gallego', level: 10 },
-        { name: 'Inglés', level: 10 },
-        { name: 'Catalán', level: 9 },
-        { name: 'Italiano', level: 6 },
+        { name: { es: 'Español', en: 'Español' }, level: 10 },
+        { name: { es: 'Gallego', en: 'Gallego' }, level: 10 },
+        { name: { es: 'Inglés', en: 'Inglés' }, level: 10 },
+        { name: { es: 'Catalán', en: 'Catalán' }, level: 9 },
+        { name: { es: 'Italiano', en: 'Italiano' }, level: 6 },
       ],
     },
   ],

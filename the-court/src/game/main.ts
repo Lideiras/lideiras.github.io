@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { content, type SectionId } from '../data/content';
 import { t } from '../i18n';
+import { DialogueBox } from '../ui/dialogue';
 import { Hud } from '../ui/hud';
 import { PanelManager, sectionKey, signKey, statsSource } from '../ui/panels';
 import { Sfx } from './audio';
@@ -1175,6 +1176,22 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
     sectionCam = null;
     setMode('play');
   });
+  /*
+   * EL CUADRO DE CONVERSACIÓN, y por último a propósito: monta su DOM en `#ui`,
+   * así que tiene que ir después del HUD (que hace `innerHTML = ...` y se comería
+   * el cuadro) y después del panel, para que en el orden de apilado el cuadro
+   * quede por debajo de la tarjeta del panel.
+   */
+  const dialogue = new DialogueBox(uiRoot, () => {
+    /*
+     * Se acabó la entrevista (o la ha cortado el jugador con Escape): se abre el
+     * panel de contacto, que es exactamente lo que se abre desde el menú. El modo
+     * pasa a `panel` —no a `interview`— porque el cuadro ya está cerrado y lo que
+     * queda delante del jugador es un panel modal normal, no un directo.
+     */
+    setMode('panel');
+    panels.open('contact');
+  });
   if (coarse) hud.mountTouch(input);
   canvas.setAttribute('aria-label', t('aria_game'));
   window.addEventListener('langchange', () => canvas.setAttribute('aria-label', t('aria_game')));
@@ -1201,6 +1218,13 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
     document.body.dataset.mode = m;
     input.setEnabled(m === 'play');
     if (m === 'play') canvas.focus({ preventScroll: true });
+    /*
+     * La entrevista sólo existe en modo `interview`: en cuanto se sale de él —se
+     * abre otra sección desde el menú, se cierra un panel— el cuadro se esconde.
+     * Va aquí y no en cada sitio que abre algo para que no haya ni un camino de
+     * salida que se deje el cuadro puesto detrás del panel.
+     */
+    if (m !== 'interview') dialogue.close();
   }
 
   // ───────── Lógica de juego
@@ -1419,14 +1443,20 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
       pos.set(INTERVIEW.playerSpot[0], 0, INTERVIEW.playerSpot[1]);
       rotY = 0; // mira hacia +Z (el reportero)
       player.root.rotation.y = rotY;
+      /*
+       * RUTA B (E junto al reportero): aquí NO se abre el panel. Sale el cuadro de
+       * conversación, que vive fuera del panel, y el panel de contacto se abrirá
+       * cuando el guion se acabe (lo llama `dialogue`). Por eso la rama de abajo
+       * no pinta nada en este caso: si también abriera el panel, la entrevista
+       * volvería a quedar metida en la tarjeta.
+       */
+      dialogue.start();
     } else if (fromZone) {
       // El resto de secciones ya tienen al jugador encima (entró por la zona),
       // así que no hay que teletransportarlo: sólo orientarlo hacia el atrezo,
       // que es lo que hace que el plano sea el de alguien leyendo su rótulo.
       rotY = SECTION_CAMERA[id].face;
       player.root.rotation.y = rotY;
-    }
-    if (fromZone) {
       // Primero la cámara, después la información.
       window.setTimeout(() => {
         // Si el jugador ha cerrado o abierto otra cosa mientras tanto, esta
@@ -3067,6 +3097,21 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
     set.tally.visible = mode === 'interview' || Math.floor(time * 1.5) % 2 === 0;
     // Retransmisión: REC, canal y contador mientras el plató está en directo.
     hud.setBroadcast(mode === 'interview', animTime);
+    /*
+     * CUADRO DE CONVERSACIÓN: la máquina de escribir.
+     *
+     * Es lo único que este bucle hace para la interfaz, y va con `time` —el reloj
+     * DECORATIVO— y nunca con `animTime`: un texto saliendo letra a letra es
+     * adorno, y con `prefers-reduced-motion` lo que se para es lo decorativo. (Por
+     * eso el método recibe también `reduced`: con el reloj congelado a 0, la línea
+     * se escribe entera de golpe, que es lo único que puede pasar si no avanza.)
+     *
+     * El `if` no es una optimización: es la garantía de que no se toca el DOM en
+     * ningún fotograma fuera de la entrevista. Cuando el cuadro está cerrado,
+     * `tick` no hace nada; cuando está abierto, una escritura de `textContent` y
+     * nada más. Ni geometría, ni materiales, ni sombras, ni medidas.
+     */
+    if (mode === 'interview') dialogue.tick(time, reduced);
     (set.onAir.material as THREE.MeshStandardMaterial).emissiveIntensity = mode === 'interview' ? 1.6 : 0.2;
 
     updateCamera(dt);

@@ -1,0 +1,45 @@
+{
+  "workdir": "the-court",
+  "gates": [
+    {
+      "id": "types",
+      "cmd": "npx tsc --noEmit",
+      "pass": "exit 0 y salida vacia",
+      "mutates": false
+    },
+    {
+      "id": "test",
+      "cmd": "npm test",
+      "pass": "12 ficheros, 163 tests, 0 fallos",
+      "mutates": false
+    },
+    {
+      "id": "validate",
+      "cmd": "npm run validate -- --strict",
+      "pass": "content.ts valido: 10 proyectos, 6 grupos de skills, 11 hitos",
+      "mutates": false
+    },
+    {
+      "id": "build",
+      "cmd": "npm run build",
+      "pass": "tsc + vite build sin error; dist/ generado",
+      "mutates": true,
+      "mutates_what": "escribe the-court/dist/ y regenera the-court/public/classic/index.html (ambos gitignored)"
+    },
+    {
+      "id": "sync-classic",
+      "cmd": "fc /b classic\\index.html the-court\\public\\classic\\index.html",
+      "pass": "sin diferencias",
+      "mutates": false,
+      "why": "detecta la desincronizacion silenciosa entre la fuente unica y la copia versionada"
+    },
+    {
+      "id": "sync-root",
+      "cmd": "fc /b index.html the-court\\dist\\index.html",
+      "pass": "sin diferencias",
+      "mutates": false,
+      "why": "detecta desincronizacion entre el build y lo publicado"
+    }
+  ],
+  "verificacion_completa": "npm test && npm run build, en ese orden"
+}
