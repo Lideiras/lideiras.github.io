@@ -3,9 +3,6 @@ import { fmtDate, persona, vistaHitos, vistaProyectos } from '../data/view';
 import { getLang, loc, t, TEMAS_ABOUT, type UIKey } from '../i18n';
 import { bindContactForm, renderContactForm } from './contactForm';
 
-/** Un texto bilingüe en dos spans, igual que en la clásica. */
-const b = (v: { es: string; en: string }): string => `<span lang="es">${esc(v.es)}</span><span lang="en">${esc(v.en)}</span>`;
-
 export const esc = (s: string): string =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string);
 const safeUrl = (u: string): string => (/^(https?:|mailto:)/i.test(u) ? u : '#');
@@ -184,16 +181,27 @@ function renderProjects(): string {
   ]);
 }
 
-/** Skills: una pestaña por grupo, con el nivel en número además de la barra. */
+/**
+ * Skills: una pestaña por grupo, con el nivel en número además de la barra.
+ *
+ * LOS NOMBRES VAN CON `loc()`, como los proyectos y los hitos, y no con un
+ * helper bilingüe. Aquí hubo uno —`b()`, que devolvía los dos `<span lang>`— y
+ * se le pasaba por `esc()`: el `esc` escapaba el MARCADO, así que el panel
+ * pintaba las etiquetas literales (`<span lang="es">C#</span>…`) en vez de los
+ * nombres, y los nombres en los dos idiomas a la vez. Además el juego no tiene
+ * la regla de la clásica que esconde el idioma que no toca (`html[data-l]`), así
+ * que ni sin escapar habría funcionado: en el juego el idioma es el que se pinta,
+ * y una vista se lee en el idioma que había al abrirla (igual que el resto).
+ */
 function renderSkills(): string {
   return tabs(
     content.skills.map((g) => ({
-      label: b(g.name),
-      html: `<h3 class="tabpanel__title">${esc(b(g.name))}</h3><ul class="skills">${g.items
+      label: loc(g.name),
+      html: `<h3 class="tabpanel__title">${esc(loc(g.name))}</h3><ul class="skills">${g.items
         .map(
           (i) => `<li class="stat">
-        <span class="stat__name">${esc(b(i.name))}</span>
-        <span class="bar" role="meter" aria-valuemin="1" aria-valuemax="10" aria-valuenow="${i.level}" aria-label="${esc(t('skills_level'))}: ${esc(b(i.name))} ${i.level}/10"><i style="width:${i.level * 10}%"></i></span>
+        <span class="stat__name">${esc(loc(i.name))}</span>
+        <span class="bar" role="meter" aria-valuemin="1" aria-valuemax="10" aria-valuenow="${i.level}" aria-label="${esc(t('skills_level'))}: ${esc(loc(i.name))} ${i.level}/10"><i style="width:${i.level * 10}%"></i></span>
         <b class="stat__lv">${i.level}<small>/10</small></b>
       </li>`,
         )
