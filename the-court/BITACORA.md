@@ -1468,3 +1468,54 @@ deriva de contenido y del rediseño —la clásica se ha rebautizado «The Court
 `person.name`; `index.html` no lleva `person.role.es`; el primer proyecto se llama «Endless Blue»; el
 correo quedó detrás de los proyectos—, y `tests/guardas-contenido.test.ts` compara un `join(' | ')` con
 `[]`, que no puede pasar nunca (se arregla comparando el array de errores, no su texto).
+## 3s. La versión de móvil: orientación, el botón de tiro y el HUD en franjas
+
+Todo lo de esta sección es SÓLO táctil. El escritorio no se toca: el CSS nuevo vive en
+`@media (pointer: coarse)` (la puerta, además, en `(pointer: coarse) and (max-height: 540px)`) y el JS recibe
+`compacto = coarse`. Medido a 1440×900 sin táctil al terminar: 6 rótulos, récord a 14 px del borde, aviso de
+bienvenida a 13,6 px, `.touch` sin montar y la lista de teclado en la puerta. Idéntico a antes.
+
+### Lo que había, medido en un Pixel 7 (412×839 y 863×360)
+
+| Qué | Antes | Ahora |
+|---|---|---|
+| **La puerta en horizontal** | la tarjeta medía **728 px** en una pantalla de **360**: los dos botones de idioma caían FUERA de pantalla y no había scroll, así que **no se podía empezar a jugar** | tarjeta de 360 px y botón visible (279-324). Además `max-height: 100dvh` + scroll como red: en ninguna pantalla puede volver a pasar |
+| Controles en la puerta | la lista del TECLADO (W A S D / Espacio / E), teclas que un móvil no tiene | en táctil se enseña la de los mandos (Joystick / TIRO / ACCIÓN); en teclado, la de siempre |
+| Aviso de orientación | no existía | «Vertical u horizontal, pero **mejor en horizontal** · Portrait or landscape, **landscape is better**», sólo en táctil |
+| Rótulos de rumbo | **6** flotando; **3 de ellos debajo del joystick y del botón de tiro** | **2** en vertical y **1** en horizontal (los más cercanos); ninguno bajo la banda de mandos |
+| Récord | esquina inferior derecha, DENTRO de la banda: se pisaba con el botón de tiro | franja propia por encima de los mandos (`abajo: 198`), con **0 px²** de solape |
+| Aviso de acción | centrado al 26 %, se pisaba con el récord | a la izquierda en la franja del récord, `max-width: calc(100% - 148px)`: **0 px²** de solape |
+| Subtítulos | 198 px (dentro de la banda en horizontal) | por encima de la franja (`--mando + 54 px`) |
+| Medidor de tiro | al 14 % (dentro de la banda) | borde de arriba de la banda (`--mando - 34`), centrado: no toca ni al joystick ni a los botones |
+| Aviso de bienvenida | media pantalla (4 líneas a 13,6 px) | 11,5 px en vertical (206×84) y 10,9 px en horizontal (420×52) |
+| Banda de mandos | 190 px fijos, también en horizontal (la mitad de la pista) | `--mando` en la hoja: **190** en vertical, **150** en horizontal (joystick 104, botones 74 y 56) |
+| Botón de ACCIÓN | decía «E» mientras el aviso decía «Pulsa ACCIÓN» | dice **ACCIÓN** |
+| Botón de tiro | el emoji **🏀** | el balón **dibujado** (SVG), como el resto de iconos |
+
+### El tiro que se cortaba a medias
+
+* El emoji es **TEXTO**: mantener el dedo encima para cargar el tiro abría el menú de selección/copia del
+  sistema, y el tiro se quedaba a medias. Ahora el botón lleva un **dibujo** (no hay nada que seleccionar), el
+  pie de pantalla lleva `user-select: none`, `-webkit-user-select: none`, `-webkit-touch-callout: none` y
+  `-webkit-tap-highlight-color: transparent`, y se cancela el `contextmenu` de toda la banda.
+* Y el tiro se **captura** con `setPointerCapture`: el `pointerleave` de antes lo cancelaba en cuanto el pulgar
+  resbalaba fuera del botón —con un botón de 74 px y el pulgar encima, eso pasa solo—. Ahora se suelta al
+  levantar el dedo, que es lo que espera cualquiera que haya cargado un tiro. Un segundo dedo no toma el
+  relevo mientras el primero carga.
+* Medido con toques REALES (CDP `Input.dispatchTouchEvent`, no eventos sintéticos): pulsación de 650 ms →
+  `getSelection()` **vacío**, medidor visible y carga al 33 %; al levantar el dedo el medidor se apaga. Igual
+  en vertical y en horizontal.
+
+### El HUD, en franjas
+
+* `--mando` es el ÚNICO número que sabe cuánto mide la banda de mandos: la usan `.touch` (su alto) y todo lo que
+  se apoya encima, así que no hay dos cifras que se puedan desfasar. En el JS el pie reservado se **mide**
+  (`offsetHeight` de `.touch`), no se escribe: con el 104 px fijo del ordenador los rótulos caían debajo de los
+  mandos.
+* Los rótulos de rumbo se recortan a los **más cercanos** (`recortarRotulos`, ordenando por la distancia que ya
+  se medía para el texto): seis flechas en 412 px no dicen más que la primera.
+
+### Estado
+
+`npx tsc --noEmit` 0 errores · `npm run build` ✓ (`main` 711,15 kB / 198,88 kB gzip) · `npm test` **211/220**
+(los 9 fallos son los de contenido y la clásica, anteriores y ajenos a esto) · raíz republicada desde `dist/`.

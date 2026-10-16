@@ -35,11 +35,38 @@
           se pinta ANTES de que exista idioma elegido. Al elegir, `setLang` dispara
           `langchange` y el HUD se re-tuenta solo; esta tarjeta desaparece entonces.
         -->
-        <ul class="gate-keys">
+        <!--
+          VAN DOS LISTAS y en táctil se enseña la otra: con una sola, el teléfono
+          recibía la lista del teclado —W A S D, Espacio, E—, teclas que no tiene,
+          mientras los mandos de verdad (joystick, TIRO, ACCIÓN) no aparecían por
+          ninguna parte. Cuál se ve lo decide `styles.css` con `(pointer: coarse)`.
+        -->
+        <ul class="gate-keys gate-keys--teclado">
           <li><kbd>W A S D</kbd> <span>Moverte · Move</span></li>
           <li><kbd>Espacio</kbd> <span>Mantén para tirar · Hold to shoot</span></li>
           <li><kbd>E</kbd> <span>Entrar en una sección · Enter a section</span></li>
         </ul>
+        <ul class="gate-keys gate-keys--tactil">
+          <li><kbd>Joystick</kbd> <span>Moverte · Move</span></li>
+          <li><kbd>TIRO</kbd> <span>Mantén y suelta · Hold and release</span></li>
+          <li><kbd>ACCIÓN</kbd> <span>Entrar en una sección · Enter a section</span></li>
+        </ul>
+        <!--
+          Aviso de orientación. Sólo se ve en táctil, y va en la puerta porque es
+          el único momento en el que el jugador todavía no ha empezado y puede
+          girar el móvil sin perder nada. Dice las dos cosas y en ese orden —se
+          juega en vertical y en horizontal, pero se ve mejor en horizontal—
+          porque el juego funciona de verdad en las dos: lo que cambia es cuánta
+          pista se ve.
+        -->
+        <p class="gate-rotate">
+          <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true" shape-rendering="crispEdges">
+            <rect x="2" y="2" width="6" height="9" fill="none" stroke="currentColor" stroke-width="1.6"/>
+            <rect x="4" y="12" width="2" height="1.6" fill="currentColor"/>
+            <path d="M11 4.5 L14.5 8 L11 11.5 Z" fill="currentColor"/>
+          </svg>
+          <span>Vertical u horizontal, pero <b>mejor en horizontal</b> · Portrait or landscape, <b>landscape is better</b></span>
+        </p>
         <div class="gate-buttons">
           <button type="button" data-lang="es">Español</button>
           <button type="button" data-lang="en">English</button>

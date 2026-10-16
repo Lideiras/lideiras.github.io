@@ -27,9 +27,20 @@ interface HudLabel {
   y: number;
   /** `true` cuando está DENTRO de pantalla: cuelga de su punto en vez de centrarse. */
   bottom: boolean;
+  /** Distancia al jugador, en metros: es la cifra que se lee y la que ordena cuál se ve. */
+  d: number;
 }
 
 const clampNum = (v: number, a: number, b: number): number => Math.min(b, Math.max(a, v));
+
+/**
+ * Altura por debajo de la cual un móvil está EN HORIZONTAL.
+ *
+ * Es el mismo corte que el `@media (max-height: 540px)` de `styles.css`, y aquí
+ * se usa para lo mismo: reservar menos pie (no cabe todo) y enseñar un solo
+ * rótulo en vez de dos. Si cambia allí, cambia aquí.
+ */
+const ALTO_CORTO = 540;
 
 /*
  * ICONOS DIBUJADOS, no emoji.
@@ -59,6 +70,19 @@ const ICON = {
     '<rect x="2" y="3" width="12" height="2" fill="currentColor"/>' +
     '<rect x="2" y="7" width="12" height="2" fill="currentColor"/>' +
     '<rect x="2" y="11" width="12" height="2" fill="currentColor"/></svg>',
+  /*
+   * El balón del botón de tiro. Antes era el emoji 🏀, y en táctil el emoji es
+   * justo el problema: es TEXTO, así que mantener el dedo encima para cargar el
+   * tiro abría el menú de selección/copia del sistema en vez de nada útil, y el
+   * tiro se cortaba. Un dibujo no se puede seleccionar, y además no cambia de
+   * forma ni de color según el móvil como cambia un emoji.
+   */
+  ball:
+    '<svg viewBox="0 0 16 16" width="34" height="34" aria-hidden="true" shape-rendering="crispEdges">' +
+    '<circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" stroke-width="1.9"/>' +
+    '<rect x="7.1" y="1.3" width="1.8" height="13.4" fill="currentColor"/>' +
+    '<path d="M2 4.6 Q5.6 8 2 11.4" fill="none" stroke="currentColor" stroke-width="1.7"/>' +
+    '<path d="M14 4.6 Q10.4 8 14 11.4" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>',
 } as const;
 
 export class Hud {
@@ -99,8 +123,17 @@ export class Hud {
      la lista del menú era plana: no había forma de saber qué faltaba. */
   private visited = new Set<string>();
   private locked = new Set<string>();
+  /** La banda de mandos montada (sólo en táctil): su alto es lo que se reserva. */
+  private touchEl: HTMLElement | null = null;
+  private actBtn: HTMLButtonElement | null = null;
+  private shootBtn: HTMLButtonElement | null = null;
 
-  constructor(private root: HTMLElement, private cb: HudCallbacks, muted: boolean) {
+  /**
+   * @param compacto táctil de verdad (puntero grueso). Cambia dos cosas: cuánta
+   *   pantalla se reserva para los mandos y cuántos rótulos de rumbo se ven. En
+   *   el ordenador no se toca nada.
+   */
+  constructor(private root: HTMLElement, private cb: HudCallbacks, muted: boolean, private compacto = false) {
     this.muted = muted;
     this.root.innerHTML = `
       <div class="hud">
@@ -223,6 +256,10 @@ export class Hud {
     this.broadcastEl.querySelector('.broadcast__now')!.textContent = t('live_now');
     this.contestEl.querySelector('.contest__tag')!.textContent = t('contest_tag');
     this.subsEl.querySelector('.subs__who')!.textContent = t('cmt_tag');
+    // Los mandos táctiles llevan texto propio (ACCIÓN y el nombre del de tiro,
+    // que sólo se lee en voz alta): se re-traducen como todo lo demás.
+    if (this.actBtn) this.actBtn.textContent = t('touch_action');
+    this.shootBtn?.setAttribute('aria-label', t('touch_shoot'));
     // Fuerza un repintado del marcador del concurso con los textos nuevos.
     this.contestTxt = '';
   }
@@ -284,6 +321,7 @@ export class Hud {
       x: 0,
       y: 0,
       bottom: false,
+      d: 0,
     });
   }
 
@@ -303,6 +341,7 @@ export class Hud {
     l.x = x;
     l.y = y;
     l.bottom = onScreen;
+    l.d = dist;
     l.arrow.style.transform = `rotate(${angle.toFixed(3)}rad)`;
     const d = `${Math.round(dist)} m`;
     if (l.dist.textContent !== d) l.dist.textContent = d;
@@ -330,10 +369,27 @@ export class Hud {
   layoutLabels(viewW: number, viewH: number): void {
     const MARGIN = 10;
     const GAP = 6;
-    // Zonas ocupadas por el propio HUD: barra de arriba (récord y botones) y
-    // franja de abajo (récord, aviso y medidor).
+    // Zonas ocupadas por el propio HUD: barra de arriba (botones) y franja de
+    // abajo (mandos, aviso, subtítulos, récord y medidor).
     const TOP = 58;
-    const BOTTOM = 104;
+    /*
+     * En táctil el pie reservado se MIDE: la banda de mandos (`--mando` en
+     * `styles.css`, que en horizontal es más baja porque la pantalla mide 360 px)
+     * más lo que se apoya encima. Con el número fijo de 104 px que usa el
+     * ordenador, los rótulos caían debajo del joystick y del botón de tiro: en un
+     * Pixel 7 en vertical, tres de los seis. En horizontal no cabe todo —ahí se
+     * reserva sólo la franja del aviso— y el rótulo puede quedar sobre los
+     * subtítulos, que es lo menos malo de las dos cosas.
+     */
+    const banda = this.compacto ? (this.touchEl?.offsetHeight ?? 0) : 0;
+    const BOTTOM = this.compacto ? banda + (viewH > ALTO_CORTO ? 94 : 48) : 104;
+    /*
+     * Y en táctil se ven sólo los rótulos MÁS CERCANOS: dos en vertical y uno en
+     * horizontal. Seis flechas flotando en una pantalla de 412 px se comen la
+     * pista y no dicen más que la primera: la que hay que visitar es la de al
+     * lado. Se ordena por la distancia que ya se está midiendo para el texto.
+     */
+    if (this.compacto) this.recortarRotulos(viewH > ALTO_CORTO ? 2 : 1);
     const boxes: { l: HudLabel; x: number; y: number; w: number; h: number }[] = [];
     for (const l of this.labels.values()) {
       if (l.el.style.display === 'none') continue;
@@ -386,6 +442,22 @@ export class Hud {
       const anchor = b.l.bottom ? 'translate(-50%, -100%)' : 'translate(-50%, -50%)';
       b.l.el.style.transform = `${anchor} translate(${b.x.toFixed(1)}px, ${b.y.toFixed(1)}px)`;
     }
+  }
+
+  /**
+   * Deja visibles los `n` rótulos más cercanos (sólo en táctil).
+   *
+   * Sólo ESCONDE: los rótulos que el juego apaga a propósito —la entrevista los
+   * esconde todos— no se vuelven a encender aquí. `placeLabel` vuelve a poner
+   * `display: ''` en el fotograma siguiente, así que este recorte se repite cada
+   * fotograma: el estilo se toca dos veces pero no se pinta entre las dos (la
+   * última llamada del fotograma es esta).
+   */
+  private recortarRotulos(n: number): void {
+    const vivos = [...this.labels.values()].filter((l) => l.el.style.display !== 'none');
+    if (vivos.length <= n) return;
+    vivos.sort((a, b) => a.d - b.d);
+    for (const l of vivos.slice(n)) l.el.style.display = 'none';
   }
 
   /** Marca las secciones todavía bloqueadas (Projects hasta encestar). */
@@ -599,10 +671,21 @@ export class Hud {
     wrap.innerHTML = `
       <div class="joy" data-joy><div class="stick" data-stick></div></div>
       <div class="touch__btns">
-        <button type="button" class="btn-round" data-act>E</button>
-        <button type="button" class="btn-round btn-round--big" data-shoot>🏀</button>
+        <button type="button" class="btn-round btn-round--act" data-act></button>
+        <button type="button" class="btn-round btn-round--big" data-shoot>${ICON.ball}</button>
       </div>`;
     this.root.appendChild(wrap);
+    this.touchEl = wrap;
+    /*
+     * El botón de acción dice ACCIÓN y no «E». En un móvil no hay tecla E, y el
+     * aviso que sale al llegar a una sección dice «Pulsa ACCIÓN»
+     * (`hint_interact_touch`): con la letra, el jugador buscaba un botón que el
+     * texto nombraba y no existía.
+     */
+    this.actBtn = wrap.querySelector<HTMLButtonElement>('[data-act]')!;
+    this.actBtn.textContent = t('touch_action');
+    this.shootBtn = wrap.querySelector<HTMLButtonElement>('[data-shoot]')!;
+    this.shootBtn.setAttribute('aria-label', t('touch_shoot'));
 
     const joy = wrap.querySelector<HTMLElement>('[data-joy]')!;
     const stick = wrap.querySelector<HTMLElement>('[data-stick]')!;
@@ -634,13 +717,40 @@ export class Hud {
     joy.addEventListener('pointerup', end);
     joy.addEventListener('pointercancel', end);
 
-    const shoot = wrap.querySelector<HTMLElement>('[data-shoot]')!;
+    /*
+     * El pie de la pantalla NO tiene menú contextual: mantener el dedo en el
+     * botón de tiro es cargar el tiro, no abrir el menú del navegador. En iOS el
+     * globo de «copiar / buscar» lo corta `-webkit-touch-callout: none` en el
+     * CSS; aquí se corta el otro, el del botón derecho / pulsación larga.
+     */
+    wrap.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    /*
+     * TIRO: se mantiene pulsado para cargar, así que el puntero se CAPTURA. Con
+     * el dedo capturado el tiro ya no se cancela cuando el pulgar resbala fuera
+     * del botón —que es lo que hacía el `pointerleave` de antes, con un botón de
+     * 74 px y el pulgar encima— y termina al levantar el dedo, que es lo que
+     * espera cualquiera que haya cargado un tiro.
+     */
+    const shoot = this.shootBtn;
+    let tiroPid: number | null = null;
+    const soltarTiro = (e: PointerEvent): void => {
+      if (tiroPid === null || e.pointerId !== tiroPid) return;
+      tiroPid = null;
+      input.shootHeld = false;
+    };
     shoot.addEventListener('pointerdown', (e) => {
       e.preventDefault();
+      if (tiroPid !== null) return; // ya hay un dedo cargando: el segundo no cuenta
+      tiroPid = e.pointerId;
+      shoot.setPointerCapture(tiroPid);
       input.shootHeld = true;
     });
-    for (const ev of ['pointerup', 'pointercancel', 'pointerleave'] as const) shoot.addEventListener(ev, () => (input.shootHeld = false));
-    wrap.querySelector<HTMLElement>('[data-act]')!.addEventListener('pointerdown', (e) => {
+    shoot.addEventListener('pointerup', soltarTiro);
+    shoot.addEventListener('pointercancel', soltarTiro);
+    shoot.addEventListener('lostpointercapture', soltarTiro);
+
+    this.actBtn.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       input.pressInteract();
     });

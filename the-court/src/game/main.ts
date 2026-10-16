@@ -1168,6 +1168,13 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
       onToggleMute: () => sfx.toggleMute(),
     },
     sfx.muted,
+    /*
+     * En táctil el HUD cambia: se reserva la banda de mandos medida y se enseñan
+     * sólo los dos rótulos de rumbo más cercanos (uno en horizontal). Es lo que
+     * `coarse` decide en todo el juego —los avisos y los botones— así que se pasa
+     * desde aquí en vez de volver a preguntar por el `matchMedia` dentro del HUD.
+     */
+    coarse,
   );
   // Ahora sí: el panel se añade después de que el HUD haya construido su DOM.
   const dbg = { freeze: false };

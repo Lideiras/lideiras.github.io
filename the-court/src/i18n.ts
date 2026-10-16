@@ -49,6 +49,12 @@ export const UI = {
     es: 'Mantén TIRO y suelta en la zona verde',
     en: 'Hold SHOOT and release in the green zone',
   },
+  /* Textos de los mandos táctiles. El de acción SÍ se lee: es la etiqueta del
+     botón, que en un móvil no puede ser «E» (no hay tecla E y el aviso de las
+     secciones dice «Pulsa ACCIÓN»). El de tiro es sólo para lectores de pantalla:
+     ese botón lleva el balón dibujado. */
+  touch_action: { es: 'ACCIÓN', en: 'ACTION' },
+  touch_shoot: { es: 'Tiro', en: 'Shoot' },
   section_projects: { es: 'Proyectos', en: 'Projects' },
   section_skills: { es: 'Skills', en: 'Skills' },
   section_about: { es: 'Sobre mí', en: 'About me' },
