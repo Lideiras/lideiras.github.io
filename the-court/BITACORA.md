@@ -1404,3 +1404,67 @@ directos y el formulario».
 `npx tsc --noEmit` 0 errores · `npm test` **150/150** en 11 ficheros (5 nuevos de i18n) · `npm run
 build` ✓ con la validación de contenido (`--strict`) y la versión clásica · `main` **704,71 kB /
 197,26 kB gzip**.
+## 3r. La máquina de escribir del cuadro de entrevista, arreglada, y un clic que adelanta
+
+### El síntoma, reproducido
+
+Abrir la entrevista y no ver nada escrito: la primera frase se quedaba en curso con **0 caracteres** y
+así seguía; sólo salía al pulsar el cuadro. Medido en el navegador con la entrevista abierta (10
+muestras cada 400 ms sobre `[data-dlg-now] p`): `nowLen = 0` en las diez, **3,6 s sin escribir una
+letra**.
+
+### La causa: el reloj entra en segundos y el cuadro habla en milisegundos
+
+`ui/dialogue.ts` está escrito en milisegundos —`CPS = 45/1000` (caracteres por ms), `PAUSA_HABLA = 520`,
+`PAUSA_RESPUESTA = 380`— pero el bucle le pasaba `time`, el reloj **decorativo**, que va en **segundos**
+(`clock.elapsedTime`). Con las unidades mezcladas la frase tardaba **mil veces más**: 0,045 caracteres
+por segundo, o sea una letra cada ~22 s. Las pausas, por lo mismo, eran de 520 s.
+
+Y el mismo error tenía un segundo efecto, peor: con `prefers-reduced-motion` ese reloj está **congelado
+a 0**, así que las pausas no vencían nunca y la conversación se quedaba clavada en la primera frase, para
+siempre y sin que ningún clic accidental la desbloqueara.
+
+### El arreglo
+
+* `tick()` recibe **`animTime * 1000`** —el reloj del personaje, el que nunca se congela, en
+  milisegundos— y no el decorativo. De `tick` no cuelgan sólo las letras: también las **pausas**. Quien
+  decide si la frase sale letra a letra o de golpe sigue siendo `reduced`, que ya iba como segundo
+  argumento: lo que se deja de hacer es *parar el reloj* para conseguir «sin animación».
+* **`arranque` se ancla en el primer fotograma**, no en el que creó la frase (`arranque: -1`, y lo pone
+  `tick`). `start()` corre antes de que el bucle vuelva a llamar a `tick`, así que al crear la línea no
+  hay ningún reloj de verdad al que agarrarse: con el reloj viejo —o con el 0 del arranque— la primera
+  frase de la primera entrevista habría salido entera de golpe.
+* **La pausa se cuenta desde que la frase termina**, no desde que empieza, y viaja **con la frase**
+  (`LineaViva.pausa`): `PAUSA_HABLA` para el entrevistador —es la que separa dos intervenciones suyas— y
+  `PAUSA_RESPUESTA`, más corta, después de la respuesta del jugador. Contada desde el arranque, una
+  frase larga se comía la pausa escribiéndose y la intervención siguiente entraba pegada: dos frases
+  seguidas del mismo entrevistador se leían como un párrafo único.
+* **Un clic, un mensaje.** `completar()` termina la frase Y acorta la pausa a ahora, así que el turno
+  siguiente entra en el fotograma que viene; antes el clic sólo completaba la frase y leer la entrevista
+  pedía **dos clics por mensaje**. Lo que no se salta nunca es una respuesta pendiente: eso es ahora una
+  bandera explícita (`esperando`) y no un `hasta = Infinity`, que era el mismo truco pero escondido en
+  el valor de un número.
+
+### Medido en vivo
+
+| Qué | Cómo se midió | Resultado |
+|---|---|---|
+| Escribe sola | 12 muestras cada 200 ms de `[data-dlg-now] p` | 12 → 22 → 31 → 40 → 49 → 60 → 69 → 78 → 88 → 97 caracteres: **~45 caracteres por segundo**, y la frase entera al registro |
+| Encadena turnos | la misma muestra, 6 s con el cuadro abierto | pasa de la primera frase a la segunda, a la tercera y a la primera pregunta sin tocar nada, y **ahí se queda esperando con las 2 respuestas** |
+| Clic mientras escribe | clic en el cuadro con la frase a 7 caracteres | la frase **entra entera al registro** (log 7 → 8) y el mensaje siguiente **ya se está escribiendo**: 0 → 9 caracteres en 260 ms |
+| Clic en la pausa | clic con la frase terminada y la pausa corriendo | el mensaje siguiente arranca en **60 ms** (sin el clic habría esperado los 520) |
+| Con respuestas delante | clic en el cuadro con los dos botones a la vista | **no pasa nada**: `choices` sigue en 2, la decisión no se pierde |
+| Movimiento reducido | Playwright con `emulateMedia({ reducedMotion: 'reduce' })`, 14 muestras cada 500 ms | cada frase sale **entera de golpe** y la conversación **avanza sola** hasta la primera pregunta (`log` 1 → 2 → 3 → 4, `choices` 2) sin ningún clic |
+| La copia publicada | servidor estático sobre la raíz del repo, bundle `assets/main-CXm16C63.js` | la puerta se pinta, `mode=attract`, **sin 404 ni errores de consola**; el bundle trae `tick(le*1e3,n)` donde el anterior traía `tick(k,n)` |
+
+### Estado
+
+`npx tsc --noEmit` 0 errores · `npm run build` ✓ (validación `--strict` y versión clásica; `main` 709,81
+kB / 198,52 kB gzip) · raíz **republicada** desde `dist/` (índice y dos chunks nuevos).
+
+`npm test` **211/220**. Los **9 fallos son anteriores a este cambio y no lo tocan**: ninguno de esos
+ficheros importa `ui/dialogue.ts` ni `game/main.ts`, y el recuento es idéntico antes y después. Son
+deriva de contenido y del rediseño —la clásica se ha rebautizado «The Court» y ya no lleva
+`person.name`; `index.html` no lleva `person.role.es`; el primer proyecto se llama «Endless Blue»; el
+correo quedó detrás de los proyectos—, y `tests/guardas-contenido.test.ts` compara un `join(' | ')` con
+`[]`, que no puede pasar nunca (se arregla comparando el array de errores, no su texto).

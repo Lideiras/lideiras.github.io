@@ -3100,18 +3100,21 @@ export async function createGame(opts: { canvas: HTMLCanvasElement; onProgress: 
     /*
      * CUADRO DE CONVERSACIÓN: la máquina de escribir.
      *
-     * Es lo único que este bucle hace para la interfaz, y va con `time` —el reloj
-     * DECORATIVO— y nunca con `animTime`: un texto saliendo letra a letra es
-     * adorno, y con `prefers-reduced-motion` lo que se para es lo decorativo. (Por
-     * eso el método recibe también `reduced`: con el reloj congelado a 0, la línea
-     * se escribe entera de golpe, que es lo único que puede pasar si no avanza.)
+     * Es lo único que este bucle hace para la interfaz, y va con `animTime` —el
+     * reloj REAL— y no con `time`, el decorativo. No es un descuido: del cuadro no
+     * cuelgan sólo las letras, sino también las PAUSAS entre intervenciones, y con
+     * el reloj congelado a 0 (movimiento reducido) la conversación se quedaba
+     * clavada en la primera frase porque su pausa no pasaba nunca. El reloj entra
+     * en MILISEGUNDOS, que son las unidades de `CPS` y de las dos pausas del
+     * cuadro; quien decide si la frase se escribe letra a letra o de golpe es
+     * `reduced`, que va como segundo argumento.
      *
      * El `if` no es una optimización: es la garantía de que no se toca el DOM en
      * ningún fotograma fuera de la entrevista. Cuando el cuadro está cerrado,
      * `tick` no hace nada; cuando está abierto, una escritura de `textContent` y
      * nada más. Ni geometría, ni materiales, ni sombras, ni medidas.
      */
-    if (mode === 'interview') dialogue.tick(time, reduced);
+    if (mode === 'interview') dialogue.tick(animTime * 1000, reduced);
     (set.onAir.material as THREE.MeshStandardMaterial).emissiveIntensity = mode === 'interview' ? 1.6 : 0.2;
 
     updateCamera(dt);

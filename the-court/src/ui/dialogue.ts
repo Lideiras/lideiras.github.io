@@ -95,8 +95,10 @@ interface LineaViva {
   completo: string;
   /** Caracteres ya escritos: se compara con el objetivo antes de tocar el DOM. */
   escritos: number;
-  /** Reloj decorativo en el que empieza a escribirse. */
+  /** Reloj (ms) del PRIMER fotograma que la escribe, o -1 si todavía no ha llegado. */
   arranque: number;
+  /** Pausa (ms) que se espera desde que la frase termina de escribirse. */
+  pausa: number;
 }
 
 /**
@@ -123,10 +125,12 @@ export class DialogueBox {
   private skip: HTMLButtonElement;
   private vivo: LineaViva | null = null;
   private pendientes: [UIKey, UIKey] | null = null;
+  /** El jugador tiene delante las dos respuestas: nada avanza hasta que elija. */
+  private esperando = false;
   private turno = 0;
-  /** Último reloj decorativo recibido: los manejadores lo necesitan sin esperar al bucle. */
+  /** Último reloj (ms) recibido: los manejadores lo necesitan sin esperar al bucle. */
   private reloj = 0;
-  /** Reloj en el que se permite pasar al turno siguiente. */
+  /** Reloj (ms) en el que se permite pasar al turno siguiente. */
   private hasta = 0;
   private activo = false;
 
@@ -157,9 +161,10 @@ export class DialogueBox {
 
     this.etiquetas();
     /*
-     * Pulsar el cuadro (o su botón) es «adelante»: termina la línea de golpe y
-     * enseña las respuestas. El caso de cuando no hay nada que escribir se
-     * resuelve en `completar()`.
+     * Pulsar el cuadro (o su botón) es «adelante»: termina la línea de golpe y,
+     * si no hay respuestas que esperar, pasa YA al mensaje siguiente. Un clic,
+     * un mensaje: así la entrevista se puede leer a golpe de clic sin esperar ni
+     * a la máquina de escribir ni a las pausas. Todo está en `completar()`.
      */
     this.el.addEventListener('click', (e) => {
       if ((e.target as HTMLElement).closest('button')) return;
@@ -194,6 +199,7 @@ export class DialogueBox {
     this.activo = false;
     this.vivo = null;
     this.pendientes = null;
+    this.esperando = false;
     this.el.hidden = true;
     this.now.replaceChildren();
     this.choices.replaceChildren();
@@ -216,26 +222,45 @@ export class DialogueBox {
   }
 
   /**
-   * Avanza la máquina de escribir. Lo llama el bucle con el reloj DECORATIVO.
+   * Avanza la máquina de escribir. Lo llama el bucle con el reloj REAL, en
+   * MILISEGUNDOS.
    *
-   * Es decoración, así que usa `time` y nunca `animTime`: con movimiento
-   * reducido el reloj va congelado a 0 y, precisamente por eso, la línea se
-   * escribe ENTERA de golpe (`reducido`). Sin ese parámetro, con el reloj
-   * parado, `time - arranque` no avanzaría nunca y el texto no saldría.
+   * EL RELOJ NO ES EL DECORATIVO, y es a propósito. De aquí no cuelgan sólo las
+   * letras: también las PAUSAS entre intervenciones. Con el reloj decorativo
+   * —que con «movimiento reducido» está congelado a 0— las letras no saldrían,
+   * vale, pero es que además las pausas tampoco avanzarían y la conversación se
+   * quedaría clavada en la primera frase, esperando a un reloj que ya no corre.
+   * Lo que hace «sin animación» es escribir la frase ENTERA de una vez
+   * (`reducido`), no parar el reloj del cuadro.
+   *
+   * Y las unidades son las del reloj que entra: milisegundos, las mismas que
+   * `CPS` y que las dos pausas. (Con el reloj en segundos —que es lo que llega
+   * del bucle— la frase tardaba mil veces más en escribirse: la primera
+   * intervención no llegaba a salir nunca y había que pulsar para leerla.)
    *
    * Es el único trabajo por fotograma que hace este módulo, y solo con el cuadro
    * abierto: una escritura de `textContent` cuando el número de caracteres ha
    * cambiado de verdad. Ni una lectura de medidas, ni un reflow.
    */
-  tick(time: number, reducido: boolean): void {
-    this.reloj = time;
+  tick(ms: number, reducido: boolean): void {
+    this.reloj = ms;
     if (!this.activo) return;
     const v = this.vivo;
     if (!v) {
-      if (this.pendientes === null && time >= this.hasta) this.siguiente();
+      // Nada que escribir: o se espera a que pase la pausa, o el jugador tiene
+      // delante las dos respuestas y no hay turno siguiente que valga.
+      if (!this.esperando && this.pendientes === null && ms >= this.hasta) this.siguiente();
       return;
     }
-    const n = reducido ? v.completo.length : Math.min(v.completo.length, Math.floor((time - v.arranque) * CPS));
+    /*
+     * La frase se ancla al PRIMER fotograma que la puede escribir, y no al que la
+     * creó: `start()` corre antes de que el bucle vuelva a llamar a `tick`, así
+     * que en el momento de crearla no hay ningún reloj de verdad al que
+     * agarrarse. Con el reloj viejo —o con el 0 del arranque— la primera frase
+     * saldría entera de golpe la primera vez que se abre el cuadro.
+     */
+    if (v.arranque < 0) v.arranque = ms;
+    const n = reducido ? v.completo.length : Math.min(v.completo.length, Math.floor((ms - v.arranque) * CPS));
     if (n !== v.escritos) {
       v.escritos = n;
       v.texto.textContent = v.completo.slice(0, n);
@@ -260,7 +285,21 @@ export class DialogueBox {
     p.className = 'dlg__text';
     el.append(who, p);
     this.now.replaceChildren(el);
-    this.vivo = { el, texto: p, completo: texto, escritos: -1, arranque: this.reloj };
+    /*
+     * La pausa posterior viaja CON la frase: la del entrevistador es la que
+     * separa dos intervenciones suyas, y la del jugador es más corta porque
+     * quien acaba de pulsar una respuesta no necesita que se le deje respirar.
+     * `arranque` se queda sin reloj a propósito: lo pone `tick`, que es quien
+     * tiene uno de verdad.
+     */
+    this.vivo = {
+      el,
+      texto: p,
+      completo: texto,
+      escritos: -1,
+      arranque: -1,
+      pausa: jugador ? PAUSA_RESPUESTA : PAUSA_HABLA,
+    };
   }
 
   /**
@@ -283,6 +322,14 @@ export class DialogueBox {
     // `scrollIntoView`: eso desplazaría también a la página y, con el cuadro
     // pegado al borde inferior, el botón de saltar se movería con ella.
     this.log.scrollTop = this.log.scrollHeight;
+    /*
+     * La pausa se cuenta desde que la frase TERMINA, que es cuando el jugador
+     * acaba de leerla. Contada desde que empieza —que es lo que se hacía antes—
+     * una frase larga se comía la pausa escribiéndose y la intervención
+     * siguiente entraba pegada: dos frases seguidas del mismo entrevistador se
+     * leían como un párrafo único y sin aire.
+     */
+    this.hasta = this.reloj + v.pausa;
   }
 
   /** Turno siguiente del guion. Si no hay más, se acabó la conversación. */
@@ -294,16 +341,16 @@ export class DialogueBox {
       return;
     }
     this.hablar(t('dlg_host'), 'dato' in turno ? lineaDato(turno.dato) : t(turno.host), false);
+    // Las respuestas se enseñan cuando la frase acaba (`tick`), no ahora: el
+    // jugador tiene que poder leer la pregunta entera antes de contestarla. La
+    // pausa que venga después de la frase la pone `cerrarLinea()`.
     this.pendientes = turno.opciones ?? null;
-    // Con respuestas se espera a que el jugador elija, así que la espera es
-    // infinita; sin ellas, una pausa para que la réplica y la pregunta siguiente
-    // no caigan en el mismo fotograma y se lean como una sola frase larga.
-    this.hasta = turno.opciones ? Number.POSITIVE_INFINITY : this.reloj + PAUSA_HABLA;
   }
 
   /** Las dos respuestas, y el foco en la primera. */
   private mostrar(keys: [UIKey, UIKey]): void {
     this.pendientes = null;
+    this.esperando = true;
     for (const key of keys) {
       const b = document.createElement('button');
       b.type = 'button';
@@ -330,28 +377,39 @@ export class DialogueBox {
      * tabulador se escapaba del diálogo.
      */
     this.log.focus();
+    this.esperando = false;
     this.hablar(persona().name, t(key), true);
     this.pendientes = null;
-    this.hasta = this.reloj + PAUSA_RESPUESTA;
   }
 
-  /** «Adelante»: la línea se escribe entera y las respuestas salen ya. */
+  /**
+   * «Adelante»: un clic termina la frase en curso y sigue el chat.
+   *
+   * El clic hace las DOS cosas —acabar la máquina de escribir y proceder al
+   * mensaje siguiente— porque es lo que se espera de un cuadro de diálogo: si
+   * sólo acabara la frase, leer la entrevista pediría dos clics por mensaje (uno
+   * para que salga entero, que es lo único que hacía antes, y otro para pasar).
+   * Aquí el segundo clic no hace falta: la pausa se acorta a AHORA y el turno
+   * siguiente entra en el fotograma que viene.
+   *
+   * Lo que no se salta NUNCA es una respuesta pendiente: mientras el jugador
+   * tiene delante los dos botones no hay ningún turno siguiente al que saltar, y
+   * esa decisión no se puede perder por un clic de más.
+   */
   private completar(): void {
     if (!this.activo) return;
     const v = this.vivo;
     if (v) {
       this.cerrarLinea();
-      if (this.pendientes) this.mostrar(this.pendientes);
-      return;
+      if (this.pendientes) {
+        this.mostrar(this.pendientes);
+        return;
+      }
     }
-    /*
-     * No hay nada que escribir. La pausa se acorta —quien va rápido no tiene por
-     * qué mirar el reloj— PERO sólo si no se está esperando una respuesta: la
-     * espera del jugador es un `hasta` infinito, y si se acortara, el pulsingón
-     * saltaría al siguiente turno del entrevistador y la respuesta del jugador se
-     * perdería sin llegar a existir.
-     */
-    if (this.hasta !== Number.POSITIVE_INFINITY) this.hasta = this.reloj;
+    // Nada que escribir, o se acaba de completar: la espera se acorta —quien va
+    // rápido no tiene por qué mirar el reloj— para que el mensaje siguiente
+    // empiece ya. Con las respuestas delante, no: esa decisión es del jugador.
+    if (!this.esperando) this.hasta = this.reloj;
   }
 
   /**
