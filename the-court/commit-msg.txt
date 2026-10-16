@@ -1,0 +1,13 @@
+feat: portafolio legible e identidad en la primera pantalla
+
+- Puerta del idioma: nombre, subtitulo, rol, ubicacion y correo de content.ts
+- Capa de vista pura (view.ts): orden, agrupado y formato de fechas para juego y clasica
+- "Sobre mi" por temas declarados (no por posicion)
+- Skills y stack bilingues
+- Dialogo de entrevista fuera del panel (rutas menu vs reportero separadas)
+- classic/ reconstruida: email arriba, indice de anclas, fechas formateadas, etiqueta tipo hito, sin <p></p> vacio, detalles plegados, Skills traducido, metadatos og:*
+- Guardas del validador (nivel 1-10, grupos vacios, titulo vacio, longitudes)
+- .skip visible al tabular y por encima del lienzo
+- Edad calculada desde birthDate en vez de 23 estatico
+- Limpieza de public/: borrado public/index.html y public/assets/ (-794 kB en dist/)
+- Tests de aceptacion para AC1..AC7 (7 ficheros nuevos)

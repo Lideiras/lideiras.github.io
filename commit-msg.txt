@@ -1,0 +1,7 @@
+deploy: publico build actualizado en la raiz (GitHub Pages)
+
+- Puerta del idioma: "The Court" / Lideiras Portfolio / Software & Game Developer
+- Entrevista fuera del panel (dialogo estilo novela visual)
+- classic/ reconstruida: email arriba, indice de anclas, fechas formateadas, etiqueta tipo hito, sin <p></p> vacio, detalles plegados, Skills traducido, metadatos og:*
+- Limpieza de public/: borrado public/index.html y public/assets/
+- Tests de aceptacion para AC1..AC7
